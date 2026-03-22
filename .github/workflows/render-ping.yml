@@ -1,0 +1,22 @@
+# Render 무료 티어 슬립 방지: checkout/npm 없이 GET만 호출 (분 단위 Actions 시간 절약)
+name: Render keepalive (ping)
+
+on:
+  schedule:
+    # UTC 기준 10분마다 (15분 슬립 전에 깨우기)
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: GET /ping (keep Render awake)
+        env:
+          SERVER_PUBLIC_URL: ${{ secrets.SERVER_PUBLIC_URL }}
+        run: |
+          if [ -z "$SERVER_PUBLIC_URL" ]; then
+            echo "::error::SERVER_PUBLIC_URL 시크릿이 비어 있습니다. 예: https://your-app.onrender.com (끝에 / 없음)"
+            exit 1
+          fi
+          curl -fsS --max-time 60 "${SERVER_PUBLIC_URL}/ping"

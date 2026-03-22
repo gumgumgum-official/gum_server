@@ -1,9 +1,9 @@
-# 배포된 gum_server /health 를 주기적으로 검사하고, 실패 시에만 Discord로 알림
+# 배포 URL의 /health 를 검사하고, 실패 시에만 Discord 알림 (슬립 방지는 render-ping.yml 사용)
 name: Health check (Discord on failure)
 
 on:
   schedule:
-    # UTC 기준 5분마다 (Render 무료 슬립 완화용 ping과 별개로, 장애 감지용)
+    # UTC 기준 5분마다 — 장애 감지·본문 status 검증
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
@@ -25,6 +25,15 @@ jobs:
       - name: Run health check (notifies Discord only on failure)
         env:
           HEALTH_URL: ${{ secrets.HEALTH_URL }}
+          SERVER_PUBLIC_URL: ${{ secrets.SERVER_PUBLIC_URL }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           HEALTH_TIMEOUT_MS: '15000'
-        run: node scripts/health-check-discord.js
+        run: |
+          # HEALTH_URL 우선, 없으면 SERVER_PUBLIC_URL/health (한 시크릿만 써도 됨)
+          export EFFECTIVE_HEALTH_URL="${HEALTH_URL:-${SERVER_PUBLIC_URL}/health}"
+          if [ -z "$EFFECTIVE_HEALTH_URL" ] || [ "$EFFECTIVE_HEALTH_URL" = "/health" ]; then
+            echo "::error::HEALTH_URL 또는 SERVER_PUBLIC_URL 중 하나를 설정하세요."
+            exit 1
+          fi
+          export HEALTH_URL="$EFFECTIVE_HEALTH_URL"
+          node scripts/health-check-discord.js
