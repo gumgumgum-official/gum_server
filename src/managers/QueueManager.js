@@ -18,11 +18,13 @@
  * - 각 대기 중인 사용자의 정보를 저장
  */
 class QueueItem {
-  constructor(socketId, worryId) {
+  constructor(socketId, worryId, { svgUrl = null, sessionId = null } = {}) {
     this.socketId = socketId;    // 소켓 ID
     this.worryId = worryId;      // 고민 ID
     this.timestamp = Date.now(); // 추가 시간
     this.timeoutId = null;       // 타임아웃 ID (취소 시 사용)
+    this.svgUrl = svgUrl;        // 태블릿 SVG URL (옵션)
+    this.sessionId = sessionId;  // 세션 ID (옵션)
   }
 }
 
@@ -46,8 +48,8 @@ class QueueManager {
    * 3. 대기열에 추가 (맨 뒤)
    * 4. 현재 순서 반환
    */
-  add(socketId, worryId, onTimeout) {
-    const item = new QueueItem(socketId, worryId);
+  add(socketId, worryId, onTimeout, { svgUrl = null, sessionId = null } = {}) {
+    const item = new QueueItem(socketId, worryId, { svgUrl, sessionId });
 
     // 5분 타임아웃 설정
     item.timeoutId = setTimeout(() => {
@@ -101,7 +103,9 @@ class QueueManager {
 
     return {
       socketId: item.socketId,
-      worryId: item.worryId
+      worryId: item.worryId,
+      svgUrl: item.svgUrl,
+      sessionId: item.sessionId
     };
   }
 

@@ -8,13 +8,13 @@ const logger = require('../utils/logger');
 /**
  * 모니터 할당 요청 처리
  * @param {object} socket - Socket.io socket 객체
- * @param {object} data - { worryId }
+ * @param {object} data - { worryId, svgUrl?, sessionId? }
  * @param {object} monitorManager - MonitorManager 인스턴스
  * @param {object} queueManager - QueueManager 인스턴스
  * @param {object} io - Socket.io 서버 인스턴스
  */
 function handleMonitorRequest(socket, data, monitorManager, queueManager, io) {
-  const { worryId } = data;
+  const { worryId, svgUrl = null, sessionId = null } = data || {};
   logger.info(`모니터 요청: worryId=${worryId}, socket=${socket.id}`);
 
   // 빈 모니터 찾기
@@ -27,7 +27,9 @@ function handleMonitorRequest(socket, data, monitorManager, queueManager, io) {
     // 모니터 상태 변경
     monitorManager.assign(availableMonitor, {
       worryId,
-      socketId: socket.id
+      socketId: socket.id,
+      svgUrl,
+      sessionId
     });
 
     // 태블릿에 할당 결과 전송
@@ -41,7 +43,9 @@ function handleMonitorRequest(socket, data, monitorManager, queueManager, io) {
 
     // 모니터에 체험 시작 신호
     io.to(availableMonitor).emit(constants.EVENT_NAMES.START_EXPERIENCE, {
-      worryId
+      worryId,
+      svgUrl,
+      sessionId
     });
 
   } else {
@@ -57,7 +61,8 @@ function handleMonitorRequest(socket, data, monitorManager, queueManager, io) {
         io.to(expiredSocketId).emit(constants.EVENT_NAMES.QUEUE_EXPIRED, {
           message: '⏰ 대기 시간이 초과되었어요. 다시 시도해주세요.'
         });
-      }
+      },
+      { svgUrl, sessionId }
     );
 
     // 대기 안내 전송
@@ -102,7 +107,9 @@ function handleExperienceComplete(socket, monitorId, monitorManager, queueManage
 
     // 모니터에 체험 시작 신호
     io.to(monitorId).emit(constants.EVENT_NAMES.START_EXPERIENCE, {
-      worryId: nextUser.worryId
+      worryId: nextUser.worryId,
+      svgUrl: nextUser.svgUrl ?? null,
+      sessionId: nextUser.sessionId ?? null
     });
 
     // 남은 대기자들에게 순서 업데이트

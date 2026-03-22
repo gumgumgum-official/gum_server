@@ -230,6 +230,7 @@ socket.emit('request-monitor', { worryId: 'test-123' });
 - **[기능명세서.md](./기능명세서.md)** - 전체 기능 명세 및 구현 가이드
 - **[SUPABASE_SETUP.md](./SUPABASE_SETUP.md)** - Supabase 설정 단계별 가이드
 - **[API.md](./API.md)** - REST API 및 Socket.io 이벤트 상세 명세
+- **[docs/RENDER_DEPLOY.md](./docs/RENDER_DEPLOY.md)** - Render 배포, 헬스/Discord 알림, GitHub Secrets
 
 ---
 

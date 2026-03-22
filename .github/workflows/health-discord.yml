@@ -1,0 +1,30 @@
+# 배포된 gum_server /health 를 주기적으로 검사하고, 실패 시에만 Discord로 알림
+name: Health check (Discord on failure)
+
+on:
+  schedule:
+    # UTC 기준 5분마다 (Render 무료 슬립 완화용 ping과 별개로, 장애 감지용)
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install production deps
+        run: npm install --omit=dev
+
+      - name: Run health check (notifies Discord only on failure)
+        env:
+          HEALTH_URL: ${{ secrets.HEALTH_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          HEALTH_TIMEOUT_MS: '15000'
+        run: node scripts/health-check-discord.js

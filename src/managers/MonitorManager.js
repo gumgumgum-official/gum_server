@@ -58,7 +58,7 @@ class MonitorManager {
    * 모니터 할당
    *
    * @param {string} monitorId - 'monitor-1' or 'monitor-2'
-   * @param {object} worryData - { worryId, socketId }
+   * @param {object} worryData - { worryId, socketId, svgUrl?, sessionId? }
    *
    * 동작:
    * 1. 모니터 상태를 busy로 변경
@@ -69,7 +69,9 @@ class MonitorManager {
     this.monitors[monitorId].status = 'busy';
     this.monitors[monitorId].currentWorry = {
       worryId: worryData.worryId,
-      assignedAt: Date.now()  // 할당 시간 기록
+      assignedAt: Date.now(), // 할당 시간 기록
+      svgUrl: worryData.svgUrl ?? null,
+      sessionId: worryData.sessionId ?? null
     };
     this.monitors[monitorId].socketId = worryData.socketId;
   }

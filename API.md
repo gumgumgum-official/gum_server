@@ -19,7 +19,9 @@
 http://localhost:3000
 ```
 
-프로덕션: `https://ggumddi-server.up.railway.app`
+프로덕션: 배포 URL로 교체 (예: Render `https://<서비스명>.onrender.com`)
+
+**모니터 할당·표시 흐름**은 아래 **REST API**를 사용합니다. Socket.io 이벤트는 기존 클라이언트 호환용(레거시)입니다.
 
 ### 헤더
 
@@ -92,7 +94,9 @@ GET /status
       "status": "busy",
       "currentWorry": {
         "worryId": "67abc123...",
-        "assignedAt": 1735392000000
+        "assignedAt": 1735392000000,
+        "svgUrl": "https://example.com/worry.svg",
+        "sessionId": "sess-uuid"
       },
       "socketId": "socket-xyz789"
     }
@@ -115,7 +119,147 @@ GET /status
 
 ---
 
-## Socket.io 이벤트
+### 3. 모니터 할당 요청 (태블릿)
+
+즉시 빈 모니터가 있으면 할당하고, 없으면 대기열에 넣습니다.
+
+**요청**
+
+```http
+POST /api/request-monitor
+Content-Type: application/json
+```
+
+**Body**
+
+| 필드 | 필수 | 타입 | 설명 |
+|------|------|------|------|
+| `worryId` | 예 | string | 고민 ID |
+| `svgUrl` | 아니오 | string\|null | SVG URL (모니터 표시용) |
+| `sessionId` | 아니오 | string\|null | 세션 ID |
+| `clientId` | 아니오 | string | 대기열 식별자. 없으면 서버가 `anonymous-...` 생성 |
+
+**응답 — 즉시 할당 (`assigned: true`)**
+
+```json
+{
+  "assigned": true,
+  "monitorId": "monitor-1",
+  "monitorNumber": 1,
+  "message": "👈 왼쪽 껌딱지월드로 가세요"
+}
+```
+
+**응답 — 대기 (`assigned: false`)**
+
+```json
+{
+  "assigned": false,
+  "queuePosition": 2,
+  "clientId": "anonymous-1735392000123-abc12",
+  "message": "2번째로 대기 중입니다"
+}
+```
+
+**에러**
+
+- `400` — `worryId` 누락: `{ "error": "worryId is required" }`
+
+---
+
+### 4. 모니터 현재 표시 내용 조회 (폴링)
+
+프론트(모니터 화면)가 1~2초 간격으로 호출합니다.
+
+**요청**
+
+```http
+GET /api/monitors/:monitorId/current
+```
+
+`monitorId`: `monitor-1` \| `monitor-2`
+
+**응답 — 유휴**
+
+```json
+{
+  "status": "idle"
+}
+```
+
+**응답 — 사용 중**
+
+```json
+{
+  "status": "busy",
+  "worry": {
+    "worryId": "67abc123...",
+    "svgUrl": "https://example.com/worry.svg",
+    "sessionId": "sess-uuid"
+  }
+}
+```
+
+**에러**
+
+- `400` — `{ "error": "invalid monitorId" }`
+
+---
+
+### 5. 모니터 체험 완료
+
+모니터에서 체험 종료 시 호출. 모니터를 비우고, 대기 중인 다음 사용자가 있으면 같은 모니터에 자동 할당합니다.
+
+**요청**
+
+```http
+POST /api/monitors/:monitorId/complete
+```
+
+**응답**
+
+```json
+{
+  "ok": true,
+  "assignedNext": true
+}
+```
+
+`assignedNext`: 대기열에서 다음 사용자를 이 모니터에 붙였으면 `true`, 없으면 `false`.
+
+**에러**
+
+- `400` — `{ "error": "invalid monitorId" }`
+
+---
+
+### 6. 대기 순번 조회
+
+`POST /api/request-monitor` 응답의 `clientId`로 대기 위치를 조회합니다.
+
+**요청**
+
+```http
+GET /api/queue/position?clientId=<clientId>
+```
+
+**응답**
+
+```json
+{
+  "queuePosition": 2
+}
+```
+
+`queuePosition`: 대기열에 없으면 `0`.
+
+**에러**
+
+- `400` — `{ "error": "clientId is required" }`
+
+---
+
+## Socket.io 이벤트 (레거시)
 
 ### 연결
 

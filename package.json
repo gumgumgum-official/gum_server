@@ -10,7 +10,8 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:client": "node test-client.js",
-    "test:api": "node test-rest-api.js"
+    "test:api": "node test-rest-api.js",
+    "health:discord": "node scripts/health-check-discord.js"
   },
   "keywords": [
     "socket.io",
