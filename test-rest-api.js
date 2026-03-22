@@ -68,8 +68,16 @@ async function testRestAPI() {
 
     console.log();
 
-    // 2. 상태 조회
-    log(colors.cyan, '[테스트 2]', 'GET /status');
+    // 2. 경량 ping
+    log(colors.cyan, '[테스트 2]', 'GET /ping');
+    const pingData = await makeRequest('/ping');
+    console.log(JSON.stringify(pingData, null, 2));
+    log(colors.green, '  ✓', 'ping 성공');
+
+    console.log();
+
+    // 3. 상태 조회
+    log(colors.cyan, '[테스트 3]', 'GET /status');
     const statusData = await makeRequest('/status');
     console.log(JSON.stringify(statusData, null, 2));
     log(colors.green, '  ✓', '상태 조회 성공');
