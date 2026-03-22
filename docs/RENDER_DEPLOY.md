@@ -3,8 +3,19 @@
 ## 개요
 
 - **Web Service** 하나로 Node(Express) 서버를 띄웁니다.
-- 무료 티는 유휴 시 슬립될 수 있어, 별도 **Uptime 모니터**나 **GitHub Actions**로 `/health`를 주기 호출하는 것을 권장합니다.
-- **헬스 실패 시 Discord 알림**은 이 레포의 [`scripts/health-check-discord.js`](../scripts/health-check-discord.js) + [`.github/workflows/health-discord.yml`](../.github/workflows/health-discord.yml)를 사용합니다 (실패할 때만 웹훅 전송).
+- 무료 티는 약 **15분** 무요청 시 슬립 → 첫 요청이 느려질 수 있습니다.
+- 이 레포는 다음을 제공합니다.
+  - **`GET /health`** — 상세 헬스(Render 대시보드 Health Check Path로 사용)
+  - **`GET /ping`** — 경량 keepalive ([`render-ping.yml`](../.github/workflows/render-ping.yml))
+  - **실패 시만 Discord** — [`health-discord.yml`](../.github/workflows/health-discord.yml) + [`scripts/health-check-discord.js`](../scripts/health-check-discord.js)
+
+**상세 문서**
+
+- GitHub 시크릿·워크플로: **[GITHUB_ACTIONS_SETUP.md](./GITHUB_ACTIONS_SETUP.md)**
+- Postman으로 API 전부 테스트: **[POSTMAN_GUIDE.md](./POSTMAN_GUIDE.md)**
+- API 필드 명세: **[API.md](../API.md)**
+
+---
 
 ## Render 대시보드 설정
 
@@ -12,47 +23,72 @@
 2. GitHub 레포 연결 후 브랜치 선택
 3. **Runtime**: Node
 4. **Build Command**: `npm install`  
-   (또는 `npm install --omit=dev` — 프로덕션만)
+   (또는 `npm install --omit=dev`)
 5. **Start Command**: `npm start` → `node server.js`
-6. **Instance type**: Free (원하는 경우 유료로 슬립 없음)
+6. **Instance type**: Free (필요 시 유료로 항상 온)
 
-### 환경 변수 (Environment)
+### 환경 변수 (Render)
 
 | 이름 | 필수 | 설명 |
 |------|------|------|
 | `NODE_ENV` | 권장 | `production` |
-| `PORT` | 아님 | Render가 자동 주입. 코드는 `process.env.PORT \|\| 3000` |
-| `CORS_ORIGIN` | 선택 | 기본 `*` (프론트 도메인 확정 후 제한 권장) |
+| `PORT` | 아님 | Render가 자동 주입 (`process.env.PORT \|\| 3000`) |
+| `CORS_ORIGIN` | 선택 | 코드상 기본은 `*` (프론트 도메인 확정 후 제한 권장) |
 
-> `DISCORD_WEBHOOK_URL` / `HEALTH_URL` 은 **Render 앱 안에 넣을 필요 없음**. GitHub Actions 시크릿에만 넣으면 됩니다.
+> `DISCORD_WEBHOOK_URL`, `SERVER_PUBLIC_URL` 은 **Render에 넣지 않아도 됩니다.** GitHub Actions 시크릿만 설정하면 됩니다.
 
 ### Health Check (Render)
 
-- **Health Check Path**: `/health`
-- 간격은 Render 플랜에 맞게 설정
+- **Health Check Path**: `/health`  
+- Render가 주기적으로 호출해 인스턴스 상태를 봅니다(플랜에 따라 다름).
 
-## 슬립 완화 (ping)
+---
 
-- **UptimeRobot**, **cron-job.org** 등에서 `GET https://<your-service>.onrender.com/health` 를 10~14분 간격으로 호출  
-- Render 무료 정책·약관을 확인한 뒤 사용하세요.
+## GitHub로 ping + 헬스 + Discord (배포 후 필수에 가깝게)
 
-## Discord 알림 (실패 시만)
+1. 배포 URL 확인: `https://<서비스명>.onrender.com`
+2. 레포 **Settings → Secrets and variables → Actions** 에 다음 추가:
 
-1. Discord 서버 → 채널 설정 → 연동 → **웹후크** 생성 → URL 복사
-2. GitHub 레포 → **Settings → Secrets and variables → Actions**
-   - `HEALTH_URL`: `https://<your-render-host>/health`
-   - `DISCORD_WEBHOOK_URL`: 위에서 복사한 URL
-3. 워크플로 `Health check (Discord on failure)` 가 `cron`으로 스크립트 실행  
-   - 정상: Discord로 아무 것도 안 보냄  
-   - 비정상(HTTP 오류, 타임아웃, `status !== "ok"`): embed 알림 1건
+| Secret | 예시 | 설명 |
+|--------|------|------|
+| **`SERVER_PUBLIC_URL`** | `https://xxx.onrender.com` | 끝에 `/` 없음. **ping**(`.../ping`)과 헬스 URL 조합에 사용 |
+| **`DISCORD_WEBHOOK_URL`** | Discord 웹훅 | 실패 알림용 |
+| `HEALTH_URL` (선택) | `https://xxx.onrender.com/health` | 전체 URL을 직접 지정할 때만 |
 
-로컬에서 수동 테스트:
+3. **Actions** 탭에서 두 워크플로가 초록색으로 도는지 확인 (수동 **Run workflow** 가능).
+
+자세한 단계·트러블슈팅: [GITHUB_ACTIONS_SETUP.md](./GITHUB_ACTIONS_SETUP.md)
+
+---
+
+## 외부 uptime 서비스 (선택)
+
+GitHub Actions 외에 **UptimeRobot**, **cron-job.org** 등에서  
+`GET https://<호스트>/ping` 또는 `/health` 를 **10~14분 간격**으로 호출해도 됩니다.  
+서비스 약관·정책을 확인하세요.
+
+---
+
+## 로컬에서 Discord 헬스 스크립트 테스트
 
 ```bash
-HEALTH_URL=https://your-app.onrender.com/health DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/... npm run health:discord
+HEALTH_URL=https://your-app.onrender.com/health \
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/... \
+npm run health:discord
 ```
 
-## 참고
+- 정상: 터미널에만 `OK`, Discord로는 **전송 없음**
+- 비정상: Discord에 embed 1건
 
-- API 전체 명세: 루트의 [`API.md`](../API.md)
-- Railway 등 다른 PaaS도 동일하게 `PORT` + `npm start` 패턴이면 동작합니다.
+---
+
+## Postman
+
+- 컬렉션: [`postman/gum_server.postman_collection.json`](../postman/gum_server.postman_collection.json)
+- 가이드: [POSTMAN_GUIDE.md](./POSTMAN_GUIDE.md)
+
+---
+
+## 기타 PaaS
+
+Railway 등도 `PORT` + `npm start` 패턴이면 동일합니다. Health path는 `/health` 권장.

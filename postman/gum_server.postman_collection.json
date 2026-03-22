@@ -1,0 +1,156 @@
+{
+  "info": {
+    "name": "gum_server REST",
+    "description": "껌딱지월드 gum_server — 헬스/모니터 할당 REST API\n\n환경 변수 `baseUrl`을 로컬 또는 Render URL로 맞추세요.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "worryId", "value": "test-worry-001" },
+    { "key": "clientId", "value": "postman-client-001" },
+    { "key": "monitorId", "value": "monitor-1" },
+    { "key": "svgUrl", "value": "https://example.com/sample.svg" },
+    { "key": "sessionId", "value": "sess-postman-001" }
+  ],
+  "item": [
+    {
+      "name": "01 - Health & Status",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health",
+            "description": "서버 상태·모니터 요약·대기열 길이"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /ping",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/ping",
+            "description": "경량 keepalive"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/status",
+            "description": "디버깅용 상세 (소켓 포함)"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 - Monitor flow",
+      "item": [
+        {
+          "name": "POST /api/request-monitor (즉시 또는 대기)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"worryId\": \"{{worryId}}\",\n  \"svgUrl\": \"{{svgUrl}}\",\n  \"sessionId\": \"{{sessionId}}\",\n  \"clientId\": \"{{clientId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/request-monitor",
+            "description": "빈 모니터 있으면 assigned:true, 없으면 queue + clientId 저장"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/queue/position",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/queue/position?clientId={{clientId}}",
+            "description": "대기 중일 때 순번 확인 (대기열 밖이면 0)"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/monitors/:monitorId/current",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/monitors/{{monitorId}}/current",
+            "description": "모니터 화면 폴링용 — idle | busy+worry"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/monitors/:monitorId/complete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": "{{baseUrl}}/api/monitors/{{monitorId}}/complete",
+            "description": "체험 종료 — 다음 대기자 자동 배정 시 assignedNext true"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 - Errors (참고)",
+      "item": [
+        {
+          "name": "POST /api/request-monitor (worryId 없음 → 400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": "{{baseUrl}}/api/request-monitor"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/monitors/invalid/current → 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/monitors/monitor-99/current"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/queue/position (clientId 없음 → 400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/queue/position"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
