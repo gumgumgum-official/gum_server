@@ -1,6 +1,6 @@
 # gum-frontend 변경사항 (Stage3 REST + 폴링 전환)
 
-이 문서는 `gumgumgum-official/gum-frontend` 레포에서, Stage3(모니터)를 Socket.io 이벤트 대신 **REST 폴링 기반**으로 바꾸는 변경사항을 정리합니다.
+이 문서는 `gumgumgum-official/gum-frontend` 레포에서, Stage3(모니터)를 **`gum_server` REST API + 폴링**만으로 동작하게 바꾸는 변경사항을 정리합니다. (서버 쪽 Socket.io는 제거됨.)
 
 > 참고: 레포 소개/라우트 구조는 [`gumgumgum-official/gum-frontend`](https://github.com/gumgumgum-official/gum-frontend) README 기준입니다.
 

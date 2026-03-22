@@ -77,5 +77,5 @@ await fetch(`${GUM_SERVER_URL}/api/request-monitor`, {
 ## 기대 결과
 
 - 태블릿/모니터가 동일한 `seq` 번호를 문구에 사용
-- 태블릿은 Socket.io 없이도 모니터 배정을 REST API로 처리
+- 태블릿은 모니터 배정을 **`POST /api/request-monitor`** REST 호출만으로 처리 (`gum_server`는 Socket.io 미사용)
 
