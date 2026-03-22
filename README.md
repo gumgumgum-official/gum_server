@@ -6,7 +6,7 @@
 졸업전시 "껌딱지월드"의 백엔드 서버
 
 * **역할** : 모니터 할당 및 상태 관리
-* **기술** : Node.js + Express + Socket.io
+* **기술** : Node.js + Express (REST API)
 * **배포** : Railway
 * **DB** : Supabase (PostgreSQL)
 
@@ -91,10 +91,10 @@ npm run dev
 **터미널 2 - 테스트 클라이언트:**
 
 ```bash
-# Socket.io 통합 테스트 (권장)
+# REST 시나리오 스크립트 (서버 실행 후)
 npm run test:client
 
-# REST API 테스트
+# REST 헬스/상태만 빠르게
 npm run test:api
 ```
 
@@ -124,10 +124,6 @@ server/
 │   │   └── __tests__/        # 단위 테스트
 │   │       ├── MonitorManager.test.js
 │   │       └── QueueManager.test.js
-│   ├── handlers/
-│   │   ├── deviceHandler.js  # 디바이스 등록 핸들러
-│   │   ├── monitorHandler.js # 모니터 할당 핸들러
-│   │   └── disconnectHandler.js # 연결 끊김 핸들러
 │   └── utils/
 │       ├── logger.js         # 로깅 유틸
 │       └── constants.js      # 상수 정의
@@ -139,23 +135,15 @@ server/
 
 ## 🔌 API 문서
 
-### REST API
+### REST API (요약)
 
-- `GET /health` - 헬스 체크
-- `GET /status` - 서버 상태 조회 (디버깅용)
+- `GET /health`, `GET /ping`, `GET /status`
+- `POST /api/request-monitor` — 태블릿 모니터 요청
+- `GET /api/monitors/:monitorId/current` — 모니터 폴링
+- `POST /api/monitors/:monitorId/complete` — 체험 완료
+- `GET /api/queue/position?clientId=...` — 대기 순번
 
-### Socket.io 이벤트
-
-자세한 API 명세는 👉 **[API.md](./API.md)** 파일을 참고하세요.
-
-**주요 이벤트:**
-
-- `register-device` - 디바이스 등록
-- `request-monitor` - 모니터 할당 요청
-- `experience-complete` - 체험 완료
-- `monitor-assigned` - 모니터 할당 완료
-- `please-wait` - 대기 안내
-- `queue-updated` - 대기열 순서 업데이트
+자세한 명세는 👉 **[API.md](./API.md)**
 
 ---
 
@@ -168,8 +156,7 @@ server/
 
 ### 통합 테스트
 
-- Socket.io 전체 플로우 테스트
-- 디바이스 등록, 할당, 대기, 완료 시나리오
+- REST 엔드포인트(supertest): 할당, 폴링, complete, 대기열
 
 ### 테스트 커버리지
 
@@ -205,23 +192,14 @@ npm run test:coverage
 ### 로컬 테스트
 
 ```bash
-# 서버 실행
 npm run dev
-
-# 브라우저 콘솔에서 테스트
-const socket = io('http://localhost:3000');
-socket.emit('register-device', 'tablet');
-socket.emit('request-monitor', { worryId: 'test-123' });
+# 다른 터미널
+npm run test:client
 ```
 
 ### 로그 확인
 
-서버 실행 시 콘솔에서 다음 정보 확인:
-
-- 클라이언트 연결/끊김
-- 디바이스 등록
-- 모니터 할당/해제
-- 대기열 상태
+서버 실행 시 콘솔에서 모니터 할당·해제, 대기열, 요청 로그를 확인할 수 있습니다.
 
 ---
 
@@ -229,8 +207,11 @@ socket.emit('request-monitor', { worryId: 'test-123' });
 
 - **[기능명세서.md](./기능명세서.md)** - 전체 기능 명세 및 구현 가이드
 - **[SUPABASE_SETUP.md](./SUPABASE_SETUP.md)** - Supabase 설정 단계별 가이드
-- **[API.md](./API.md)** - REST API 및 Socket.io 이벤트 상세 명세
-- **[docs/RENDER_DEPLOY.md](./docs/RENDER_DEPLOY.md)** - Render 배포, 헬스/Discord 알림, GitHub Secrets
+- **[API.md](./API.md)** - REST API 상세 명세
+- **[docs/RENDER_DEPLOY.md](./docs/RENDER_DEPLOY.md)** - Render 배포, `/health`·`/ping`, GitHub 워크플로 요약
+- **[docs/GITHUB_ACTIONS_SETUP.md](./docs/GITHUB_ACTIONS_SETUP.md)** - Actions 시크릿, ping·헬스·Discord 설정 전체
+- **[docs/POSTMAN_GUIDE.md](./docs/POSTMAN_GUIDE.md)** - Postman으로 REST API 단계별 테스트
+- **Postman 파일**: [`postman/gum_server.postman_collection.json`](./postman/gum_server.postman_collection.json), [`postman/gum_server.postman_environment.json`](./postman/gum_server.postman_environment.json)
 
 ---
 
