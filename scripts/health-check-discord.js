@@ -7,14 +7,15 @@
  * 환경변수:
  *   HEALTH_URL            (필수) 예: https://your-app.onrender.com/health
  *   DISCORD_WEBHOOK_URL   (필수) Discord 채널 웹훅 URL
- *   HEALTH_TIMEOUT_MS     (선택) 기본 15000
+ *   HEALTH_TIMEOUT_MS     (선택) 기본 100000 — Render 등 슬립 직후 콜드 스타트가 30~50초까지
+ *                         걸릴 수 있어 15초(구 기본)는 잦은 타임아웃 원인이 됨
  */
 
 require('dotenv').config();
 
 const HEALTH_URL = process.env.HEALTH_URL;
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
-const TIMEOUT_MS = Number(process.env.HEALTH_TIMEOUT_MS || 15000);
+const TIMEOUT_MS = Number(process.env.HEALTH_TIMEOUT_MS || 100000);
 
 async function sendDiscordFailure(payload) {
   const body = {

@@ -19,10 +19,10 @@
 
 ## 2. 시크릿 등록 위치
 
-1. GitHub 레포지토리 페이지 열기  
-2. **Settings** (레포 설정)  
-3. 왼쪽 **Secrets and variables** → **Actions**  
-4. **New repository secret** 으로 아래 항목 추가  
+1. GitHub 레포지토리 페이지 열기
+2. **Settings** (레포 설정)
+3. 왼쪽 **Secrets and variables** → **Actions**
+4. **New repository secret** 으로 아래 항목 추가
 
 > **Fork된 레포**인 경우: 기본적으로 Actions가 제한될 수 있습니다. **Settings → Actions → General** 에서 Actions 사용을 허용했는지 확인하세요.
 
@@ -65,10 +65,10 @@
 
 ## 4. 워크플로가 실제로 도는지 확인
 
-1. 레포 **Actions** 탭  
-2. 왼쪽에서 **Render keepalive (ping)** 또는 **Health check (Discord on failure)** 선택  
-3. **Run workflow** (수동)로 `workflow_dispatch` 실행 가능한 워크플로는 즉시 테스트 가능  
-4. 초록 체크면 성공, 빨간 X면 로그(Logs)를 열어 `curl` 또는 `node` 오류 메시지 확인  
+1. 레포 **Actions** 탭
+2. 왼쪽에서 **Render keepalive (ping)** 또는 **Health check (Discord on failure)** 선택
+3. **Run workflow** (수동)로 `workflow_dispatch` 실행 가능한 워크플로는 즉시 테스트 가능
+4. 초록 체크면 성공, 빨간 X면 로그(Logs)를 열어 `curl` 또는 `node` 오류 메시지 확인
 
 **자주 나는 실패**
 
@@ -77,7 +77,7 @@
 | `SERVER_PUBLIC_URL 시크릿이 비어` | ping 워크플로 — 시크릿 이름·값 확인 |
 | `HEALTH_URL 또는 SERVER_PUBLIC_URL` | health 워크플로 — 둘 중 하나 필수 |
 | `HEALTH_URL 과 DISCORD_WEBHOOK_URL 이 필요` | `DISCORD_WEBHOOK_URL` 미설정 |
-| `HTTP 5xx` / 타임아웃 | Render 슬립 직후 첫 요청 — 재실행 또는 수 초 대기 |
+| `HTTP 5xx` / `타임아웃 (100000ms)` | Render **콜드 스타트**가 30~50초까지 걸릴 수 있음. 스크립트 기본 대기는 **60초**(`HEALTH_TIMEOUT_MS`, 워크플로에도 동일). 그래도 부족하면 시크릿/환경에 `HEALTH_TIMEOUT_MS=90000` 등으로 늘리기 |
 
 ---
 
@@ -85,8 +85,8 @@
 
 GitHub Actions `schedule`은 **UTC** 기준입니다.
 
-- `render-ping.yml`: `*/10 * * * *` → UTC 기준 10분마다  
-- `health-discord.yml`: `*/5 * * * *` → UTC 기준 5분마다  
+- `render-ping.yml`: `*/10 * * * *` → UTC 기준 10분마다
+- `health-discord.yml`: `*/5 * * * *` → UTC 기준 5분마다
 
 한국 시간(KST = UTC+9)으로 변환해 두면 운영 시간과 겹치는지 가늠할 수 있습니다.
 
@@ -96,8 +96,8 @@ GitHub Actions `schedule`은 **UTC** 기준입니다.
 
 ## 6. Actions 권한 (기본으로 대부분 OK)
 
-- **Settings → Actions → General**  
-  - *Workflow permissions*: 기본적으로 읽기만 해도 이 워크플로는 동작합니다(외부 URL만 호출).  
+- **Settings → Actions → General**
+  - *Workflow permissions*: 기본적으로 읽기만 해도 이 워크플로는 동작합니다(외부 URL만 호출).
 - Organization 정책에서 Actions를 막아 두었다면 관리자에게 허용을 요청하세요.
 
 ---
@@ -107,16 +107,18 @@ GitHub Actions `schedule`은 **UTC** 기준입니다.
 ```bash
 export HEALTH_URL="https://your-app.onrender.com/health"
 export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/..."
+# 선택 — 기본 60000ms. 콜드 스타트가 길면 예: 90000
+# export HEALTH_TIMEOUT_MS=90000
 npm run health:discord
 ```
 
-성공 시 콘솔에 `OK` 와 타임스탬프, Discord에는 **아무 것도 안 갑니다**.  
+성공 시 콘솔에 `OK` 와 타임스탬프, Discord에는 **아무 것도 안 갑니다**.
 의도적으로 잘못된 `HEALTH_URL`을 넣으면 Discord에 실패 embed가 1건 옵니다.
 
 ---
 
 ## 8. 관련 문서
 
-- [RENDER_DEPLOY.md](./RENDER_DEPLOY.md) — Render 빌드/시작/Health Check Path  
-- [POSTMAN_GUIDE.md](./POSTMAN_GUIDE.md) — API 수동 테스트  
-- [API.md](../API.md) — `/health`, `/ping` 명세  
+- [RENDER_DEPLOY.md](./RENDER_DEPLOY.md) — Render 빌드/시작/Health Check Path
+- [POSTMAN_GUIDE.md](./POSTMAN_GUIDE.md) — API 수동 테스트
+- [API.md](../API.md) — `/health`, `/ping` 명세

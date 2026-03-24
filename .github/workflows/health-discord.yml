@@ -27,7 +27,7 @@ jobs:
           HEALTH_URL: ${{ secrets.HEALTH_URL }}
           SERVER_PUBLIC_URL: ${{ secrets.SERVER_PUBLIC_URL }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          HEALTH_TIMEOUT_MS: '15000'
+          HEALTH_TIMEOUT_MS: '100000'
         run: |
           # HEALTH_URL 우선, 없으면 SERVER_PUBLIC_URL/health (한 시크릿만 써도 됨)
           export EFFECTIVE_HEALTH_URL="${HEALTH_URL:-${SERVER_PUBLIC_URL}/health}"
