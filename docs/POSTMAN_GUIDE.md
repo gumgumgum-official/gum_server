@@ -84,7 +84,7 @@ pm.test("status ok", () => j.status === "ok");
 **케이스 A — 즉시 할당**
 
 - 응답: `"assigned": true`, `monitorId`, `monitorNumber`, `message`
-- **다음 단계**: 아래 `GET .../current`에서 **같은 `monitorId`**로 폴링
+- **다음 단계**: 모니터는 `POST .../start`(Stage3)를 호출한 뒤, **같은 `monitorId`**로 `GET .../current` 폴링 → 그때부터 `busy` 가능
 
 **케이스 B — 대기**
 
@@ -98,15 +98,21 @@ pm.test("status ok", () => j.status === "ok");
 
 ---
 
-## 3단계: 모니터 화면 폴링
+## 3단계: Stage3 시작 + 모니터 폴링
+
+### `POST /api/monitors/:monitorId/start`
+
+1. **02 - Monitor flow** → **POST .../start** 선택
+2. `monitorId` = `request-monitor`에서 받은 값
+3. **Send** → **200**, 본문에 `worry` 포함 (이때 서버가 `busy`)
 
 ### `GET /api/monitors/:monitorId/current`
 
 1. 변수 `monitorId`를 `monitor-1` 또는 `monitor-2`로 설정 (할당 응답과 일치)
 2. **Send** 여러 번 (실제 앱은 1~2초 간격 폴링)
 3. **기대**
-   - 유휴: `{ "status": "idle" }`
-   - 사용 중: `{ "status": "busy", "worry": { "worryId", "svgUrl", "sessionId" } }`
+   - `start` 전: `{ "status": "idle" }` (예약만 있어도 idle)
+   - `start` 후: `{ "status": "busy", "worry": { "worryId", "svgUrl", "sessionId" } }`
 
 ---
 
@@ -116,7 +122,7 @@ pm.test("status ok", () => j.status === "ok");
 
 1. 할당된 `monitorId`로 요청 (Body `{}` 또는 비워도 됨 — 서버는 바디 미사용)
 2. **기대**: `{ "ok": true, "assignedNext": true|false }`
-3. 대기자가 있으면 같은 모니터에 바로 붙으므로, 바로 이어서 **GET .../current**를내면 `busy`로 바뀔 수 있습니다.
+3. 대기자가 있으면 같은 모니터에 **예약만** 붙습니다. 다음 사람의 `busy`는 **`POST .../start`** 를 다시 호출할 때 켜집니다.
 
 ---
 

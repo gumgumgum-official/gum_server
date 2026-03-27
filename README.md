@@ -138,9 +138,10 @@ server/
 ### REST API (요약)
 
 - `GET /health`, `GET /ping`, `GET /status`
-- `POST /api/request-monitor` — 태블릿 모니터 요청
+- `POST /api/request-monitor` — 태블릿 모니터 요청(예약)
+- `POST /api/monitors/:monitorId/start` — Stage3 시작 → busy
 - `GET /api/monitors/:monitorId/current` — 모니터 폴링
-- `POST /api/monitors/:monitorId/complete` — 체험 완료
+- `POST /api/monitors/:monitorId/complete` — Stage6 종료 → idle
 - `GET /api/queue/position?clientId=...` — 대기 순번
 
 자세한 명세는 👉 **[API.md](./API.md)**
@@ -156,7 +157,7 @@ server/
 
 ### 통합 테스트
 
-- REST 엔드포인트(supertest): 할당, 폴링, complete, 대기열
+- REST 엔드포인트(supertest): 할당, start, 폴링, complete, 대기열
 
 ### 테스트 커버리지
 

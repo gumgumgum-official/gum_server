@@ -42,7 +42,7 @@
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/status",
-            "description": "디버깅용 상세 (소켓 포함)"
+            "description": "디버깅용 상세 (reservedWorry, currentWorry 등)"
           },
           "response": []
         }
@@ -86,7 +86,26 @@
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/api/monitors/{{monitorId}}/current",
-            "description": "모니터 화면 폴링용 — idle | busy+worry"
+            "description": "모니터 폴링 — idle(예약만 있어도 idle) | busy+worry"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/monitors/:monitorId/start (Stage3)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": "{{baseUrl}}/api/monitors/{{monitorId}}/start",
+            "description": "예약 → busy. Stage3 진입 시 호출"
           },
           "response": []
         },
@@ -105,7 +124,7 @@
               "raw": "{}"
             },
             "url": "{{baseUrl}}/api/monitors/{{monitorId}}/complete",
-            "description": "체험 종료 — 다음 대기자 자동 배정 시 assignedNext true"
+            "description": "Stage6 종료 — idle로 두고 다음 사람은 예약만(assignedNext). busy는 다시 /start"
           },
           "response": []
         }

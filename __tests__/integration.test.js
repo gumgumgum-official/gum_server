@@ -14,8 +14,12 @@ describe('REST API 통합', () => {
     ({ app, monitorManager, queueManager } = createApp());
   });
 
+  function startStage3(monitorId) {
+    return request(app).post(`/api/monitors/${monitorId}/start`).send({});
+  }
+
   describe('POST /api/request-monitor', () => {
-    test('빈 모니터가 있으면 즉시 할당', async () => {
+    test('빈 모니터가 있으면 즉시 태블릿 할당(예약) — 서버는 아직 idle', async () => {
       const res = await request(app)
         .post('/api/request-monitor')
         .send({ worryId: 'worry-123', clientId: 'tab-1' })
@@ -23,13 +27,15 @@ describe('REST API 통합', () => {
 
       expect(res.body.assigned).toBe(true);
       expect(res.body.monitorId).toBe('monitor-1');
-      expect(res.body.monitorNumber).toBe(1);
-      expect(monitorManager.monitors['monitor-1'].status).toBe('busy');
+      expect(monitorManager.monitors['monitor-1'].status).toBe('idle');
+      expect(monitorManager.monitors['monitor-1'].reservedWorry.worryId).toBe('worry-123');
     });
 
-    test('모든 모니터가 busy면 대기열', async () => {
-      monitorManager.monitors['monitor-1'].status = 'busy';
-      monitorManager.monitors['monitor-2'].status = 'busy';
+    test('모든 모니터가 사용 중이면 대기열 (busy 또는 예약만)', async () => {
+      monitorManager.reserve('monitor-1', { worryId: 'a' });
+      monitorManager.start('monitor-1');
+      monitorManager.reserve('monitor-2', { worryId: 'b' });
+      monitorManager.start('monitor-2');
 
       const res = await request(app)
         .post('/api/request-monitor')
@@ -58,10 +64,24 @@ describe('REST API 통합', () => {
       expect(res.body.status).toBe('idle');
     });
 
-    test('할당 후 busy와 worry 반환', async () => {
+    test('예약만 있을 때는 idle (Stage3 전)', async () => {
       await request(app)
         .post('/api/request-monitor')
         .send({ worryId: '99', svgUrl: 'https://x/s.svg', sessionId: 's1' });
+
+      const res = await request(app)
+        .get('/api/monitors/monitor-1/current')
+        .expect(200);
+
+      expect(res.body.status).toBe('idle');
+    });
+
+    test('start 후 busy와 worry 반환', async () => {
+      await request(app)
+        .post('/api/request-monitor')
+        .send({ worryId: '99', svgUrl: 'https://x/s.svg', sessionId: 's1' });
+
+      await startStage3('monitor-1').expect(200);
 
       const res = await request(app)
         .get('/api/monitors/monitor-1/current')
@@ -80,11 +100,33 @@ describe('REST API 통합', () => {
     });
   });
 
+  describe('POST /api/monitors/:monitorId/start', () => {
+    test('예약 없으면 409', async () => {
+      const res = await request(app)
+        .post('/api/monitors/monitor-1/start')
+        .send({})
+        .expect(409);
+      expect(res.body.error).toBeDefined();
+    });
+
+    test('응답에 worry 포함', async () => {
+      await request(app)
+        .post('/api/request-monitor')
+        .send({ worryId: '7', svgUrl: 'https://z.svg' });
+
+      const res = await startStage3('monitor-1').expect(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.worry.worryId).toBe('7');
+    });
+  });
+
   describe('POST /api/monitors/:monitorId/complete', () => {
     test('complete 후 대기자 없으면 idle', async () => {
       await request(app)
         .post('/api/request-monitor')
         .send({ worryId: 'w1' });
+
+      await startStage3('monitor-1');
 
       await request(app)
         .post('/api/monitors/monitor-1/complete')
@@ -101,15 +143,11 @@ describe('REST API 통합', () => {
       expect(cur.body.status).toBe('idle');
     });
 
-    test('complete 후 대기자 있으면 같은 모니터에 재할당', async () => {
-      monitorManager.assign('monitor-1', {
-        worryId: 'first',
-        clientId: null
-      });
-      monitorManager.assign('monitor-2', {
-        worryId: 'second',
-        clientId: null
-      });
+    test('complete 후 대기자 있으면 예약만 — busy는 start 때', async () => {
+      monitorManager.reserve('monitor-1', { worryId: 'first', clientId: null });
+      monitorManager.start('monitor-1');
+      monitorManager.reserve('monitor-2', { worryId: 'second', clientId: null });
+      monitorManager.start('monitor-2');
 
       queueManager.add('client-wait', 'worry-waiting', jest.fn());
 
@@ -119,13 +157,20 @@ describe('REST API 통합', () => {
 
       expect(res.body.assignedNext).toBe(true);
       expect(queueManager.getLength()).toBe(0);
-      expect(monitorManager.monitors['monitor-1'].status).toBe('busy');
-      expect(monitorManager.monitors['monitor-1'].currentWorry.worryId).toBe('worry-waiting');
+      expect(monitorManager.monitors['monitor-1'].status).toBe('idle');
+      expect(monitorManager.monitors['monitor-1'].reservedWorry.worryId).toBe('worry-waiting');
+      expect(monitorManager.monitors['monitor-1'].currentWorry).toBeNull();
 
-      const cur = await request(app)
+      let cur = await request(app)
         .get('/api/monitors/monitor-1/current')
         .expect(200);
+      expect(cur.body.status).toBe('idle');
 
+      await startStage3('monitor-1').expect(200);
+
+      cur = await request(app)
+        .get('/api/monitors/monitor-1/current')
+        .expect(200);
       expect(cur.body.status).toBe('busy');
       expect(cur.body.worry.worryId).toBe('worry-waiting');
     });
@@ -133,8 +178,10 @@ describe('REST API 통합', () => {
 
   describe('GET /api/queue/position', () => {
     test('대기 중이면 순번, 아니면 0', async () => {
-      monitorManager.monitors['monitor-1'].status = 'busy';
-      monitorManager.monitors['monitor-2'].status = 'busy';
+      monitorManager.reserve('monitor-1', { worryId: 'a' });
+      monitorManager.start('monitor-1');
+      monitorManager.reserve('monitor-2', { worryId: 'b' });
+      monitorManager.start('monitor-2');
 
       await request(app)
         .post('/api/request-monitor')

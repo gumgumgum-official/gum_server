@@ -36,13 +36,18 @@
 - idle: `{ "status": "idle" }`
 - busy: `{ "status": "busy", "worry": { "worryId", "svgUrl", "sessionId" } }`
 
-### 3) 모니터 → 체험 완료 알림
+### 3) 모니터 → Stage3 시작
+
+- **엔드포인트**: `POST /api/monitors/:monitorId/start`
+- 예약(`reservedWorry`)을 `currentWorry`로 올리고 **`busy`**
+
+### 4) 모니터 → 체험 완료 (Stage6)
 
 - **엔드포인트**: `POST /api/monitors/:monitorId/complete`
 - **Response**: `{ "ok": true, "assignedNext": true | false }`
-- 내부: `release` → `dequeue` → 대기자 있으면 `assign` (다음 내용은 **다음 폴링**에서 모니터가 감지)
+- 내부: `release` → `dequeue` → 대기자 있으면 **`reserve`만** (즉시 `busy` 아님). 다음 세션은 **`start`** 호출 시 `busy`
 
-### 4) 태블릿 → 대기 순번 조회
+### 5) 태블릿 → 대기 순번 조회
 
 - **엔드포인트**: `GET /api/queue/position?clientId=...`
 - 대기열에 없으면 `queuePosition: 0`
@@ -57,4 +62,4 @@
 
 - `worryId`는 “N번째 번호(예: `strokes.seq` )”를 문자열로 전달.
 - 태블릿: `POST /api/request-monitor`
-- 모니터: `GET .../current` 폴링 → `POST .../complete`
+- 모니터: Stage3 진입 시 `POST .../start` → `GET .../current` 폴링 → Stage6 후 `POST .../complete`

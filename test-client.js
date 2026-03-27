@@ -47,11 +47,19 @@ async function main() {
   console.log(a.status, a.body);
   const mid = a.body?.monitorId || 'monitor-1';
 
-  log(colors.cyan, '\n[3]', `GET /api/monitors/${mid}/current`);
+  log(colors.cyan, '\n[3]', `GET /api/monitors/${mid}/current (예약만 있으면 idle)`);
   const cur = await req(`/api/monitors/${mid}/current`);
   console.log(cur.status, cur.body);
 
-  log(colors.cyan, '\n[4]', `POST /api/monitors/${mid}/complete`);
+  log(colors.cyan, '\n[4]', `POST /api/monitors/${mid}/start (Stage3)`);
+  const st = await req(`/api/monitors/${mid}/start`, { method: 'POST', body: '{}' });
+  console.log(st.status, st.body);
+
+  log(colors.cyan, '\n[5]', `GET /api/monitors/${mid}/current (busy)`);
+  const cur2 = await req(`/api/monitors/${mid}/current`);
+  console.log(cur2.status, cur2.body);
+
+  log(colors.cyan, '\n[6]', `POST /api/monitors/${mid}/complete`);
   const done = await req(`/api/monitors/${mid}/complete`, { method: 'POST', body: '{}' });
   console.log(done.status, done.body);
 

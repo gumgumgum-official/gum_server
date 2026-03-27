@@ -1,19 +1,18 @@
 /**
  * 모니터 상태 관리 클래스
  *
- * 역할:
- * - 2개 모니터의 상태 (idle/busy) 관리
- * - 사용 가능한 모니터 찾기
- * - 모니터 할당 및 해제
+ * - idle + reservedWorry: 태블릿/대기열에서 이 모니터에 붙었으나 Stage3 미시작(모니터 관점 대기)
+ * - busy + currentWorry: Stage3 진행 중
  *
  * 상태 구조:
  * {
  *   'monitor-1': {
  *     status: 'idle' | 'busy',
  *     currentWorry: { worryId, assignedAt, svgUrl?, sessionId? } | null,
+ *     reservedWorry: { worryId, svgUrl?, sessionId? } | null,
  *     clientId: string | null
  *   },
- *   'monitor-2': { ... }
+ *   ...
  * }
  */
 
@@ -23,22 +22,25 @@ class MonitorManager {
       'monitor-1': {
         status: 'idle',
         currentWorry: null,
+        reservedWorry: null,
         clientId: null
       },
       'monitor-2': {
         status: 'idle',
         currentWorry: null,
+        reservedWorry: null,
         clientId: null
       }
     };
   }
 
   /**
-   * @returns {string|null} 'monitor-1' | 'monitor-2' | null
+   * 사용 가능: idle 이고 예약도 없음 (다른 태블릿에 넘길 수 있음)
+   * @returns {string|null}
    */
   findAvailable() {
     for (const [id, monitor] of Object.entries(this.monitors)) {
-      if (monitor.status === 'idle') {
+      if (monitor.status === 'idle' && !monitor.reservedWorry) {
         return id;
       }
     }
@@ -46,14 +48,12 @@ class MonitorManager {
   }
 
   /**
-   * @param {string} monitorId
+   * 태블릿 할당 또는 complete 후 대기열 dequeue — Stage3 전까지 busy 아님
    * @param {object} worryData - { worryId, clientId?, svgUrl?, sessionId? }
    */
-  assign(monitorId, worryData) {
-    this.monitors[monitorId].status = 'busy';
-    this.monitors[monitorId].currentWorry = {
+  reserve(monitorId, worryData) {
+    this.monitors[monitorId].reservedWorry = {
       worryId: worryData.worryId,
-      assignedAt: Date.now(),
       svgUrl: worryData.svgUrl ?? null,
       sessionId: worryData.sessionId ?? null
     };
@@ -61,16 +61,35 @@ class MonitorManager {
   }
 
   /**
-   * 상태를 idle로, currentWorry 제거. clientId는 유지(디버깅·다음 할당 시 덮어씀).
+   * Stage3 시작 — 예약을 current로 옮기고 busy
+   * @throws {Error} 예약 없음 또는 이미 busy
+   */
+  start(monitorId) {
+    const m = this.monitors[monitorId];
+    if (m.status === 'busy') {
+      throw new Error('already busy');
+    }
+    if (!m.reservedWorry) {
+      throw new Error('no reservation');
+    }
+    m.currentWorry = {
+      worryId: m.reservedWorry.worryId,
+      assignedAt: Date.now(),
+      svgUrl: m.reservedWorry.svgUrl,
+      sessionId: m.reservedWorry.sessionId
+    };
+    m.reservedWorry = null;
+    m.status = 'busy';
+  }
+
+  /**
+   * Stage6 종료 등 — 체험만 종료, 예약은 건드리지 않음(complete 직후 dequeue·reserve에서 설정)
    */
   release(monitorId) {
     this.monitors[monitorId].status = 'idle';
     this.monitors[monitorId].currentWorry = null;
   }
 
-  /**
-   * @returns {object} 모니터별 status 요약
-   */
   getStatus() {
     return {
       'monitor-1': this.monitors['monitor-1'].status,

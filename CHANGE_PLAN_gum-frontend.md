@@ -9,8 +9,9 @@
 - Stage2(빔): 기존 구조 유지
   - Storage list + Realtime `new_handwriting` 구독
 - Stage3(모니터): gum_server REST API만 사용
-  - `GET /api/monitors/:id/current` 폴링으로 할당 감지
-  - `POST /api/monitors/:id/complete`로 완료 알림
+  - `POST /api/monitors/:id/start` — Stage3 진입 시(이때 서버가 `busy` + `worry` 공개)
+  - `GET /api/monitors/:id/current` 폴링 — `busy`일 때 `worry.svgUrl` 등 표시
+  - `POST /api/monitors/:id/complete` — Stage6 종료·시작 화면 복귀 시 `idle` (다음 대기자는 서버 예약만, 다시 `start`로 busy)
 - 문구:
   - `${worryId}번째 고민이 도착했습니다` (worryId = seq)
 
@@ -25,9 +26,19 @@
 
 ## 상세 변경(개념/모듈 단위)
 
-### 1) 모니터 상태 폴링
+### 1) Stage3 시작 + 모니터 상태 폴링
 
-- Stage3에서 1~2초 간격으로 호출:
+- Stage3 진입 시 한 번:
+
+```ts
+await fetch(`${GUM_SERVER_URL}/api/monitors/monitor-1/start`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: '{}',
+});
+```
+
+- 이후 1~2초 간격:
 
 ```ts
 const res = await fetch(`${GUM_SERVER_URL}/api/monitors/monitor-1/current`);
@@ -35,7 +46,7 @@ const data = await res.json();
 ```
 
 - 응답 처리:
-  - `data.status === 'idle'` -> 대기 화면 유지
+  - `data.status === 'idle'` -> 대기/시작 화면(예약만 있어도 서버는 idle 응답)
   - `data.status === 'busy' && data.worry` ->
     - `arrivalText = `${data.worry.worryId}번째 고민이 도착했습니다``
     - `assignedSvgUrl = data.worry.svgUrl`

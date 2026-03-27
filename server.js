@@ -72,7 +72,7 @@ function createApp() {
     const availableMonitor = monitorManager.findAvailable();
 
     if (availableMonitor) {
-      monitorManager.assign(availableMonitor, {
+      monitorManager.reserve(availableMonitor, {
         worryId,
         clientId: clientId ?? null,
         svgUrl,
@@ -129,6 +129,40 @@ function createApp() {
     });
   });
 
+  app.post('/api/monitors/:monitorId/start', (req, res) => {
+    const { monitorId } = req.params;
+
+    if (!isValidMonitorId(monitorId)) {
+      return res.status(400).json({
+        error: 'invalid monitorId'
+      });
+    }
+
+    try {
+      monitorManager.start(monitorId);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg === 'no reservation') {
+        return res.status(409).json({ error: 'no reservation for this monitor' });
+      }
+      if (msg === 'already busy') {
+        return res.status(409).json({ error: 'monitor already busy' });
+      }
+      throw e;
+    }
+
+    const m = monitorManager.monitors[monitorId];
+    return res.json({
+      ok: true,
+      status: constants.MONITOR_STATUS.BUSY,
+      worry: {
+        worryId: m.currentWorry.worryId,
+        svgUrl: m.currentWorry.svgUrl ?? null,
+        sessionId: m.currentWorry.sessionId ?? null
+      }
+    });
+  });
+
   app.post('/api/monitors/:monitorId/complete', (req, res) => {
     const { monitorId } = req.params;
 
@@ -142,7 +176,7 @@ function createApp() {
 
     const nextUser = queueManager.dequeue();
     if (nextUser) {
-      monitorManager.assign(monitorId, nextUser);
+      monitorManager.reserve(monitorId, nextUser);
       return res.json({
         ok: true,
         assignedNext: true
