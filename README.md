@@ -212,6 +212,7 @@ npm run test:client
 - **[docs/RENDER_DEPLOY.md](./docs/RENDER_DEPLOY.md)** - Render 배포, `/health`·`/ping`, GitHub 워크플로 요약
 - **[docs/GITHUB_ACTIONS_SETUP.md](./docs/GITHUB_ACTIONS_SETUP.md)** - Actions 시크릿, ping·헬스·Discord 설정 전체
 - **[docs/POSTMAN_GUIDE.md](./docs/POSTMAN_GUIDE.md)** - Postman으로 REST API 단계별 테스트
+- **[docs/MONITOR_USER_FLOW.md](./docs/MONITOR_USER_FLOW.md)** - 사용자·태블릿·모니터·서버 흐름 요약
 - **Postman 파일**: [`postman/gum_server.postman_collection.json`](./postman/gum_server.postman_collection.json), [`postman/gum_server.postman_environment.json`](./postman/gum_server.postman_environment.json)
 
 ---

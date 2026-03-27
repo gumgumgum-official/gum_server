@@ -1,65 +1,55 @@
-# gum_server 변경사항 (REST + 폴링 기반 모니터 배정)
+# gum_server 변경사항 (REST + 폴링, 예약/start/complete)
 
-> **상태 (2026)**: 아래 설계는 **구현 완료**입니다. Socket.io는 제거되었고, 클라이언트는 **REST만** 사용합니다. 상세 엔드포인트·예제는 **[API.md](./API.md)** 를 기준으로 합니다.
-
-이 문서는 당시 `gum_server`에서 **Socket.io 중심 구조를 제거하고, REST API + 폴링**으로 모니터 할당/대기열/체험 완료를 처리하기 위한 변경 배경과 계약을 정리합니다.
+> **상태 (2026)**: 아래 설계는 **구현 완료**입니다. Socket.io 없음, **REST만**. 정본은 **[API.md](./API.md)** , 사용자 흐름 요약은 **[docs/MONITOR_USER_FLOW.md](./docs/MONITOR_USER_FLOW.md)** .
 
 ## 목표
 
-- 모니터(Stage3)가 “글로벌 최신 1개”가 아니라 **서버가 배정한 특정 SVG 1개**를 표시하게 만들기
-- 태블릿 제출 결과(Edge Function 응답)에서 받은 **`seq`(N번째 번호) + `svgUrl`**을 서버에 REST로 전달
-- 모니터는 **주기적인 REST 폴링**으로 “지금 나에게 할당된 고민”을 확인하고, 있으면 `N번째 고민이 도착했습니다`와 함께 해당 SVG를 표시
+- 모니터가 “글로벌 최신 1개”가 아니라 **서버가 배정한 특정 SVG 1개**만 쓰게 하기
+- 태블릿이 **`seq` + `svgUrl`** 등을 `POST /api/request-monitor`로 넘기기
+- 모니터 앱은 **`start` 이후** 폴링으로 `busy`·`worry`를 받아 표시하고, 끝나면 **`complete`**
 
-## REST API 설계
+## 서버 상태 모델 (핵심)
 
-### 1) 태블릿 → 모니터 할당 요청
+| 개념 | 의미 |
+|------|------|
+| **`reservedWorry`** | 태블릿/대기열에서 이 모니터에 붙은 고민. **`findAvailable()`에서 이 모니터는 제외** → 같은 모니터에 SVG 두 건 동시 할당 불가 |
+| **`status: busy` + `currentWorry`** | `POST .../start` 이후, 폴링 `GET .../current`가 `busy`로 내려줌 |
+| **`GET /current`의 `idle`** | 예약만 있어도 **`idle`** (worry 없음). 체험 노출은 모니터가 **`start` 호출 후** |
 
-- **엔드포인트**: `POST /api/request-monitor`
-- **Request JSON**:
+## REST API (요약)
 
-```json
-{
-  "worryId": "75",
-  "svgUrl": "https://...",
-  "sessionId": "exhibition-2026",
-  "clientId": "tablet-uuid"
-}
-```
+### 1) `POST /api/request-monitor` (태블릿)
 
-- **Response JSON**:
-  - 즉시 할당: `assigned: true`, `monitorId`, `monitorNumber`, `message`
-  - 대기: `assigned: false`, `queuePosition`, `clientId`(서버 생성 가능), `message`
+- 빈 모니터( idle + `reservedWorry` 없음 )가 있으면 **`reserve`** → 응답 `assigned: true`
+- 없으면 대기열 `add` → `assigned: false` + `queuePosition` + `clientId`
 
-### 2) 모니터 → 현재 할당 상태 폴링
+### 2) `GET /api/monitors/:monitorId/current` (모니터 폴링)
 
-- **엔드포인트**: `GET /api/monitors/:monitorId/current`
-- idle: `{ "status": "idle" }`
-- busy: `{ "status": "busy", "worry": { "worryId", "svgUrl", "sessionId" } }`
+- `currentWorry` 없으면 항상 `{ "status": "idle" }`
+- `start` 이후에만 `{ "status": "busy", "worry": { ... } }`
 
-### 3) 모니터 → Stage3 시작
+### 3) `POST /api/monitors/:monitorId/start` (모니터)
 
-- **엔드포인트**: `POST /api/monitors/:monitorId/start`
-- 예약(`reservedWorry`)을 `currentWorry`로 올리고 **`busy`**
+- 예약 → `currentWorry`, **`busy`**
+- 예약 없음 / 이미 busy → `409`
 
-### 4) 모니터 → 체험 완료 (Stage6)
+### 4) `POST /api/monitors/:monitorId/complete` (모니터)
 
-- **엔드포인트**: `POST /api/monitors/:monitorId/complete`
-- **Response**: `{ "ok": true, "assignedNext": true | false }`
-- 내부: `release` → `dequeue` → 대기자 있으면 **`reserve`만** (즉시 `busy` 아님). 다음 세션은 **`start`** 호출 시 `busy`
+- `release` (체험 구간 종료 → idle, `currentWorry` 제거)
+- `dequeue` 후 다음 사람 있으면 **`reserve`만** (즉시 `busy` 아님). 다음 사람도 **`start`** 필요
 
-### 5) 태블릿 → 대기 순번 조회
+### 5) `GET /api/queue/position?clientId=...`
 
-- **엔드포인트**: `GET /api/queue/position?clientId=...`
 - 대기열에 없으면 `queuePosition: 0`
 
-## 구현 요약 (현재 레포)
+## 구현 위치
 
-- **`server.js`**: `createApp()`으로 Express 앱 + `MonitorManager` / `QueueManager` 생성. `require.main === module`일 때만 `listen`.
-- **Socket.io 없음** — 이벤트 기반 푸시·디바이스 등록·연결 끊김 시 대기열 정리 등은 **사용하지 않음**. 대기 만료는 `QueueManager` 타임아웃 콜백만 동작.
-- **대기열 키**: `clientId`(태블릿이 넘기거나 서버가 `anonymous-...` 생성).
+- **`server.js`**: `createApp()`, 라우트만
+- **`MonitorManager`**: `findAvailable`, `reserve`, `start`, `release`, `getStatus`
+- **`QueueManager`**: FIFO, `clientId`, 타임아웃
 
-## 서버-프론트 계약(요약)
+## 서버-프론트 계약
 
-- `worryId`는 “N번째 번호(예: `strokes.seq` )”를 문자열로 전달.
-- 태블릿: `POST /api/request-monitor`
-- 모니터: Stage3 진입 시 `POST .../start` → `GET .../current` 폴링 → Stage6 후 `POST .../complete`
+- `worryId`는 보통 `strokes.seq` 문자열
+- **태블릿**: `request-monitor`만 ( **`start`/`complete` 호출 안 함** )
+- **모니터 앱 (gum-frontend)**: 체험 시작 직전 `start` → 폴링 → 끝나면 `complete`
