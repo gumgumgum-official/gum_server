@@ -5,15 +5,18 @@ require('dotenv').config();
 
 const MonitorManager = require('./src/managers/MonitorManager');
 const QueueManager = require('./src/managers/QueueManager');
+const VoteService = require('./src/services/VoteService');
+const supabase = require('./src/config/supabase');
 const logger = require('./src/utils/logger');
 const constants = require('./src/utils/constants');
 
 /**
  * Express 앱과 매니저 인스턴스를 생성합니다. (테스트에서 격리된 인스턴스 사용)
  */
-function createApp() {
+function createApp(options = {}) {
   const monitorManager = new MonitorManager();
   const queueManager = new QueueManager();
+  const voteService = options.voteService || new VoteService(supabase);
 
   const app = express();
 
@@ -203,7 +206,44 @@ function createApp() {
     });
   });
 
-  return { app, monitorManager, queueManager };
+  app.post('/api/votes', async (req, res) => {
+    const { candidate, sessionId = null, clientId = null } = req.body || {};
+    const candidateNo = Number(candidate);
+    const isValidCandidate = Number.isInteger(candidateNo) && [1, 2, 3].includes(candidateNo);
+
+    if (!isValidCandidate) {
+      return res.status(400).json({
+        error: 'candidate must be one of 1, 2, 3'
+      });
+    }
+
+    try {
+      const result = await voteService.createVoteAndGetResults({
+        candidate: candidateNo,
+        sessionId,
+        clientId
+      });
+      return res.status(200).json(result);
+    } catch (error) {
+      if (error?.code === '23505') {
+        return res.status(409).json({ error: 'duplicate vote' });
+      }
+      logger.error('투표 저장/집계 실패:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  app.get('/api/votes/results', async (req, res) => {
+    try {
+      const result = await voteService.getResults();
+      return res.status(200).json(result);
+    } catch (error) {
+      logger.error('투표 집계 조회 실패:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  return { app, monitorManager, queueManager, voteService };
 }
 
 module.exports = { createApp };

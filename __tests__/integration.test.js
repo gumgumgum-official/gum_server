@@ -222,4 +222,94 @@ describe('REST API 통합', () => {
       expect(res.body.queueLength).toBeDefined();
     });
   });
+
+  describe('투표 API', () => {
+    test('POST /api/votes - 유효한 후보면 반영된 누적 결과 반환', async () => {
+      const mockVoteService = {
+        createVoteAndGetResults: jest.fn().mockResolvedValue({
+          ok: true,
+          selectedCandidate: 2,
+          totalVotes: 10,
+          results: {
+            candidate1: 3,
+            candidate2: 4,
+            candidate3: 3
+          },
+          updatedAt: '2026-03-31T09:10:11.123Z'
+        }),
+        getResults: jest.fn()
+      };
+
+      const { app: voteApp } = createApp({ voteService: mockVoteService });
+      const res = await request(voteApp)
+        .post('/api/votes')
+        .send({ candidate: 2, sessionId: 's-1', clientId: 'c-1' })
+        .expect(200);
+
+      expect(mockVoteService.createVoteAndGetResults).toHaveBeenCalledWith({
+        candidate: 2,
+        sessionId: 's-1',
+        clientId: 'c-1'
+      });
+      expect(res.body.ok).toBe(true);
+      expect(res.body.totalVotes).toBe(10);
+      expect(res.body.results.candidate2).toBe(4);
+    });
+
+    test('POST /api/votes - 후보 범위 오류면 400', async () => {
+      const mockVoteService = {
+        createVoteAndGetResults: jest.fn(),
+        getResults: jest.fn()
+      };
+      const { app: voteApp } = createApp({ voteService: mockVoteService });
+
+      await request(voteApp)
+        .post('/api/votes')
+        .send({ candidate: 4 })
+        .expect(400);
+    });
+
+    test('POST /api/votes - 중복 투표 오류는 409', async () => {
+      const duplicateError = new Error('duplicate key value violates unique constraint');
+      duplicateError.code = '23505';
+      const mockVoteService = {
+        createVoteAndGetResults: jest.fn().mockRejectedValue(duplicateError),
+        getResults: jest.fn()
+      };
+      const { app: voteApp } = createApp({ voteService: mockVoteService });
+
+      const res = await request(voteApp)
+        .post('/api/votes')
+        .send({ candidate: 1 })
+        .expect(409);
+
+      expect(res.body.error).toBe('duplicate vote');
+    });
+
+    test('GET /api/votes/results - 누적 집계 조회', async () => {
+      const mockVoteService = {
+        createVoteAndGetResults: jest.fn(),
+        getResults: jest.fn().mockResolvedValue({
+          totalVotes: 20,
+          results: {
+            candidate1: 6,
+            candidate2: 8,
+            candidate3: 6
+          },
+          updatedAt: '2026-03-31T09:10:11.123Z'
+        })
+      };
+      const { app: voteApp } = createApp({ voteService: mockVoteService });
+
+      const res = await request(voteApp)
+        .get('/api/votes/results')
+        .expect(200);
+
+      expect(mockVoteService.getResults).toHaveBeenCalledTimes(1);
+      expect(res.body.totalVotes).toBe(20);
+      expect(res.body.results.candidate1).toBe(6);
+      expect(res.body.results.candidate2).toBe(8);
+      expect(res.body.results.candidate3).toBe(6);
+    });
+  });
 });
