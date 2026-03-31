@@ -1,6 +1,6 @@
 # 모니터·태블릿·서버 흐름 (요약)
 
-> 서버는 **예약(reserve) → 모니터가 `start` 호출 시 `GET /current`에서 busy로 보이게 함 → `complete`로 비움** 패턴입니다.  
+> 서버는 **예약(reserve) → 모니터가 `start` 호출 시 `GET /current`에서 busy로 보이게 함 → `complete`로 비움** 패턴입니다.
 > **Stage3·Stage6** 같은 이름은 gum-frontend 화면 단계일 뿐, 서버는 **`start` / `complete` 호출만** 알면 됩니다.
 
 ## 역할 한 줄
@@ -28,4 +28,3 @@
 - **태블릿**은 “어느 모니터에 붙었는지”까지만 서버 응답으로 받고, 모니터가 언제 `start`를 보내는지는 **모니터 앱**이 결정합니다.
 
 상세 API는 [API.md](../API.md) 참고.
-
