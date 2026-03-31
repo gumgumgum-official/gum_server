@@ -34,6 +34,25 @@ http://localhost:3000
 Content-Type: application/json
 ```
 
+### Supabase `votes` 테이블 (투표 API)
+
+투표 API(`POST /api/votes`, `GET /api/votes/results`)는 아래 `votes` 테이블을 기준으로 동작합니다.
+
+```sql
+create table if not exists public.votes (
+  id uuid primary key default gen_random_uuid(),
+  candidate_no smallint not null check (candidate_no in (1, 2, 3)),
+  session_id text null,
+  client_id text null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_votes_candidate_no on public.votes (candidate_no);
+create index if not exists idx_votes_created_at on public.votes (created_at);
+```
+
+중복 투표를 제한하려면 정책에 맞게 `session_id` 또는 `client_id`에 유니크 인덱스를 추가합니다.
+
 ---
 
 ### 1. 헬스 체크
@@ -322,6 +341,91 @@ GET /api/queue/position?clientId=<clientId>
 
 ---
 
+### 8. 투표 등록 + 최신 집계 반환 (Supabase)
+
+사용자가 `1|2|3` 후보 중 하나를 선택해 전송하면, 서버는 Supabase에 투표를 저장하고 **반영된 최신 누적 결과**를 함께 반환합니다.
+
+**요청**
+
+```http
+POST /api/votes
+Content-Type: application/json
+```
+
+**Body**
+
+| 필드 | 필수 | 타입 | 설명 |
+|------|------|------|------|
+| `candidate` | 예 | number | 선택 후보 번호 (`1`, `2`, `3`) |
+| `sessionId` | 아니오 | string | 세션 식별자 (중복 제한 정책 시 사용) |
+| `clientId` | 아니오 | string | 클라이언트/디바이스 식별자 |
+
+**응답 `200`**
+
+```json
+{
+  "ok": true,
+  "selectedCandidate": 2,
+  "totalVotes": 128,
+  "results": {
+    "candidate1": 40,
+    "candidate2": 55,
+    "candidate3": 33
+  },
+  "updatedAt": "2026-03-31T09:10:11.123Z"
+}
+```
+
+**필드 설명**
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `ok` | boolean | 성공 여부 (`true`) |
+| `selectedCandidate` | number | 방금 반영된 사용자 선택값 |
+| `totalVotes` | number | 전체 누적 투표수 |
+| `results.candidate1` | number | 1번 후보 누적 투표수 |
+| `results.candidate2` | number | 2번 후보 누적 투표수 |
+| `results.candidate3` | number | 3번 후보 누적 투표수 |
+| `updatedAt` | string | 집계 기준 시각 (ISO-8601) |
+
+**에러**
+
+- `400` — 후보값 누락/범위 오류: `{ "error": "candidate must be one of 1, 2, 3" }`
+- `409` — (중복 제한 정책 사용 시) 중복 투표: `{ "error": "duplicate vote" }`
+- `500` — `{ "error": "Internal Server Error" }`
+
+---
+
+### 9. 투표 집계 조회 (읽기 전용)
+
+초기 진입, 새로고침, 전광판 동기화 시 현재 누적 투표수를 조회합니다.
+
+**요청**
+
+```http
+GET /api/votes/results
+```
+
+**응답 `200`**
+
+```json
+{
+  "totalVotes": 128,
+  "results": {
+    "candidate1": 40,
+    "candidate2": 55,
+    "candidate3": 33
+  },
+  "updatedAt": "2026-03-31T09:10:11.123Z"
+}
+```
+
+**에러**
+
+- `500` — `{ "error": "Internal Server Error" }`
+
+---
+
 
 ## 에러 응답
 
@@ -390,6 +494,24 @@ const poll = async () => {
 await fetch(`${base}/api/monitors/${monitorId}/complete`, { method: 'POST' });
 ```
 
+### 투표: 등록 후 최신 집계 반영
+
+```javascript
+const base = 'http://localhost:3000';
+
+const voted = await fetch(`${base}/api/votes`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    candidate: 2,
+    sessionId: 'session-2026-001',
+    clientId: 'tablet-uuid-001'
+  })
+});
+const voteResult = await voted.json();
+// voteResult.totalVotes, voteResult.results.candidate1/2/3 로 즉시 UI 반영
+```
+
 ---
 
 ## 테스트
@@ -402,6 +524,10 @@ curl http://localhost:3000/status
 curl -X POST http://localhost:3000/api/request-monitor \
   -H "Content-Type: application/json" \
   -d '{"worryId":"test-1","clientId":"curl-client"}'
+curl -X POST http://localhost:3000/api/votes \
+  -H "Content-Type: application/json" \
+  -d '{"candidate":2,"sessionId":"sess-001","clientId":"curl-client"}'
+curl http://localhost:3000/api/votes/results
 curl http://localhost:3000/api/monitors/monitor-1/current
 curl -X POST http://localhost:3000/api/monitors/monitor-1/start
 curl http://localhost:3000/api/monitors/monitor-1/current
@@ -412,4 +538,4 @@ curl -X POST http://localhost:3000/api/monitors/monitor-1/complete
 
 ---
 
-**마지막 업데이트**: 2025-01-01
+**마지막 업데이트**: 2026-03-31 (구현 정본: `server.js`, `src/managers/MonitorManager.js`, `QueueManager.js`)

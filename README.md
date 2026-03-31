@@ -143,6 +143,8 @@ server/
 - `GET /api/monitors/:monitorId/current` — 모니터 폴링
 - `POST /api/monitors/:monitorId/complete` — Stage6 종료 → idle
 - `GET /api/queue/position?clientId=...` — 대기 순번
+- `POST /api/votes` — 투표 등록 + 반영된 누적 집계 반환
+- `GET /api/votes/results` — 현재 투표 누적 집계 조회
 
 자세한 명세는 👉 **[API.md](./API.md)**
 
