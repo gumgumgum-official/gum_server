@@ -66,6 +66,20 @@ describe('MonitorManager', () => {
       expect(monitorManager.monitors['monitor-1'].reservedWorry).toBeNull();
     });
 
+    test('displaySeq는 start 후 currentWorry에 복사', () => {
+      monitorManager.reserve('monitor-1', {
+        worryId: 'long-edge-id',
+        displaySeq: 78
+      });
+      monitorManager.start('monitor-1');
+      expect(monitorManager.monitors['monitor-1'].currentWorry.displaySeq).toBe(78);
+    });
+
+    test('유효하지 않은 displaySeq는 예약에 넣지 않음', () => {
+      monitorManager.reserve('monitor-1', { worryId: 'w', displaySeq: 0 });
+      expect(monitorManager.monitors['monitor-1'].reservedWorry.displaySeq).toBeUndefined();
+    });
+
     test('예약 없이 start 하면 에러', () => {
       expect(() => monitorManager.start('monitor-1')).toThrow('no reservation');
     });

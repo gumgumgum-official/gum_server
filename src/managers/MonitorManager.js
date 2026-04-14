@@ -8,8 +8,8 @@
  * {
  *   'monitor-1': {
  *     status: 'idle' | 'busy',
- *     currentWorry: { worryId, assignedAt, svgUrl?, sessionId? } | null,
- *     reservedWorry: { worryId, svgUrl?, sessionId? } | null,
+ *     currentWorry: { worryId, assignedAt, svgUrl?, sessionId?, displaySeq? } | null,
+ *     reservedWorry: { worryId, svgUrl?, sessionId?, displaySeq? } | null,
  *     clientId: string | null
  *   },
  *   ...
@@ -49,14 +49,22 @@ class MonitorManager {
 
   /**
    * 태블릿 할당 또는 complete 후 대기열 dequeue — Stage3 전까지 busy 아님
-   * @param {object} worryData - { worryId, clientId?, svgUrl?, sessionId? }
+   * @param {object} worryData - { worryId, clientId?, svgUrl?, sessionId?, displaySeq? }
    */
   reserve(monitorId, worryData) {
-    this.monitors[monitorId].reservedWorry = {
+    const row = {
       worryId: worryData.worryId,
       svgUrl: worryData.svgUrl ?? null,
       sessionId: worryData.sessionId ?? null
     };
+    if (
+      worryData.displaySeq != null &&
+      Number.isInteger(worryData.displaySeq) &&
+      worryData.displaySeq >= 1
+    ) {
+      row.displaySeq = worryData.displaySeq;
+    }
+    this.monitors[monitorId].reservedWorry = row;
     this.monitors[monitorId].clientId = worryData.clientId ?? null;
   }
 
@@ -78,6 +86,9 @@ class MonitorManager {
       svgUrl: m.reservedWorry.svgUrl,
       sessionId: m.reservedWorry.sessionId
     };
+    if (m.reservedWorry.displaySeq != null) {
+      m.currentWorry.displaySeq = m.reservedWorry.displaySeq;
+    }
     m.reservedWorry = null;
     m.status = 'busy';
   }

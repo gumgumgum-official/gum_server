@@ -8,13 +8,14 @@
  */
 
 class QueueItem {
-  constructor(clientId, worryId, { svgUrl = null, sessionId = null } = {}) {
+  constructor(clientId, worryId, { svgUrl = null, sessionId = null, displaySeq = null } = {}) {
     this.clientId = clientId;
     this.worryId = worryId;
     this.timestamp = Date.now();
     this.timeoutId = null;
     this.svgUrl = svgUrl;
     this.sessionId = sessionId;
+    this.displaySeq = displaySeq;
   }
 }
 
@@ -30,8 +31,8 @@ class QueueManager {
    * @param {function} onTimeout - (clientId) => void
    * @returns {number} 대기 순서 (1부터)
    */
-  add(clientId, worryId, onTimeout, { svgUrl = null, sessionId = null } = {}) {
-    const item = new QueueItem(clientId, worryId, { svgUrl, sessionId });
+  add(clientId, worryId, onTimeout, { svgUrl = null, sessionId = null, displaySeq = null } = {}) {
+    const item = new QueueItem(clientId, worryId, { svgUrl, sessionId, displaySeq });
 
     item.timeoutId = setTimeout(() => {
       this.remove(clientId);
@@ -58,7 +59,7 @@ class QueueManager {
   }
 
   /**
-   * @returns {object|null} { clientId, worryId, svgUrl, sessionId }
+   * @returns {object|null} { clientId, worryId, svgUrl, sessionId, displaySeq? }
    */
   dequeue() {
     if (this.queue.length === 0) {
@@ -68,12 +69,16 @@ class QueueManager {
     const item = this.queue.shift();
     clearTimeout(item.timeoutId);
 
-    return {
+    const out = {
       clientId: item.clientId,
       worryId: item.worryId,
       svgUrl: item.svgUrl,
       sessionId: item.sessionId
     };
+    if (item.displaySeq != null) {
+      out.displaySeq = item.displaySeq;
+    }
+    return out;
   }
 
   getLength() {

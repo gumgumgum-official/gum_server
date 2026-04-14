@@ -93,6 +93,25 @@ describe('REST API 통합', () => {
       expect(res.body.worry.sessionId).toBe('s1');
     });
 
+    test('displaySeq는 worry에 포함(긴 worryId와 분리)', async () => {
+      await request(app)
+        .post('/api/request-monitor')
+        .send({
+          worryId: '7euduofu-long-id',
+          displaySeq: 78,
+          svgUrl: 'https://x/s.svg'
+        });
+
+      await startStage3('monitor-1').expect(200);
+
+      const res = await request(app)
+        .get('/api/monitors/monitor-1/current')
+        .expect(200);
+
+      expect(res.body.worry.worryId).toBe('7euduofu-long-id');
+      expect(res.body.worry.displaySeq).toBe(78);
+    });
+
     test('잘못된 monitorId면 400', async () => {
       await request(app)
         .get('/api/monitors/monitor-99/current')
@@ -209,6 +228,56 @@ describe('REST API 통합', () => {
     });
   });
 
+  describe('모니터 인스턴스 bind (동일 URL)', () => {
+    test('첫 bind는 monitor-1, 둘째는 monitor-2', async () => {
+      const r1 = await request(app)
+        .post('/api/monitor-instance/bind')
+        .send({ instanceId: 'inst-a' })
+        .expect(200);
+      expect(r1.body.monitorId).toBe('monitor-1');
+
+      const r2 = await request(app)
+        .post('/api/monitor-instance/bind')
+        .send({ instanceId: 'inst-b' })
+        .expect(200);
+      expect(r2.body.monitorId).toBe('monitor-2');
+    });
+
+    test('같은 instanceId는 동일 monitor', async () => {
+      await request(app)
+        .post('/api/monitor-instance/bind')
+        .send({ instanceId: 'same' })
+        .expect(200);
+      const again = await request(app)
+        .post('/api/monitor-instance/bind')
+        .send({ instanceId: 'same' })
+        .expect(200);
+      expect(again.body.monitorId).toBe('monitor-1');
+    });
+
+    test('세 번째 instanceId는 409', async () => {
+      await request(app).post('/api/monitor-instance/bind').send({ instanceId: '1' }).expect(200);
+      await request(app).post('/api/monitor-instance/bind').send({ instanceId: '2' }).expect(200);
+      await request(app)
+        .post('/api/monitor-instance/bind')
+        .send({ instanceId: '3' })
+        .expect(409);
+    });
+
+    test('GET bind로 조회', async () => {
+      await request(app).post('/api/monitor-instance/bind').send({ instanceId: 'q' }).expect(200);
+      const res = await request(app)
+        .get('/api/monitor-instance/bind')
+        .query({ instanceId: 'q' })
+        .expect(200);
+      expect(res.body.monitorId).toBe('monitor-1');
+    });
+
+    test('instanceId 없으면 400', async () => {
+      await request(app).post('/api/monitor-instance/bind').send({}).expect(400);
+    });
+  });
+
   describe('GET /health, GET /status', () => {
     test('/health', async () => {
       const res = await request(app).get('/health').expect(200);
@@ -220,6 +289,28 @@ describe('REST API 통합', () => {
       const res = await request(app).get('/status').expect(200);
       expect(res.body.monitors).toBeDefined();
       expect(res.body.queueLength).toBeDefined();
+    });
+
+    test('GET /status에 예약 단계 reservedWorry가 노출됨(시작 화면 토스트·API 계약)', async () => {
+      await request(app)
+        .post('/api/request-monitor')
+        .send({
+          worryId: 'seq-9',
+          displaySeq: 9,
+          svgUrl: 'https://example.com/u.svg',
+          sessionId: 'sess-x',
+          clientId: 'tab-1'
+        })
+        .expect(200);
+
+      const res = await request(app).get('/status').expect(200);
+      const m1 = res.body.monitors['monitor-1'];
+      expect(m1.reservedWorry).toMatchObject({
+        worryId: 'seq-9',
+        displaySeq: 9,
+        svgUrl: 'https://example.com/u.svg',
+        sessionId: 'sess-x'
+      });
     });
   });
 

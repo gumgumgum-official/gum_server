@@ -4,6 +4,7 @@ const cors = require('cors');
 require('dotenv').config();
 
 const MonitorManager = require('./src/managers/MonitorManager');
+const MonitorBindingManager = require('./src/managers/MonitorBindingManager');
 const QueueManager = require('./src/managers/QueueManager');
 const VoteService = require('./src/services/VoteService');
 const supabase = require('./src/config/supabase');
@@ -15,6 +16,7 @@ const constants = require('./src/utils/constants');
  */
 function createApp(options = {}) {
   const monitorManager = new MonitorManager();
+  const monitorBindingManager = options.monitorBindingManager || new MonitorBindingManager();
   const queueManager = new QueueManager();
   const voteService = options.voteService || new VoteService(supabase);
 
@@ -42,6 +44,27 @@ function createApp(options = {}) {
     };
   }
 
+  /** 태블릿·모니터 UI용 순번 (1~). 없으면 worryId만으로 문구 구성 */
+  function parseDisplaySeq(raw) {
+    if (raw === undefined || raw === null) return null;
+    const n = typeof raw === 'number' ? raw : Number(raw);
+    if (!Number.isInteger(n) || n < 1) return null;
+    return n;
+  }
+
+  function worryJsonFromCurrent(w) {
+    if (!w) return null;
+    const out = {
+      worryId: w.worryId,
+      svgUrl: w.svgUrl ?? null,
+      sessionId: w.sessionId ?? null
+    };
+    if (w.displaySeq != null) {
+      out.displaySeq = w.displaySeq;
+    }
+    return out;
+  }
+
   app.get('/health', (req, res) => {
     res.json({
       status: 'ok',
@@ -63,8 +86,64 @@ function createApp(options = {}) {
     });
   });
 
+  /**
+   * 동일 URL로 띄운 각 모니터 브라우저에 monitor-1 / monitor-2 슬롯 배정 (instanceId는 클라이언트 UUID·localStorage)
+   */
+  app.post('/api/monitor-instance/bind', (req, res) => {
+    const { instanceId } = req.body || {};
+    if (!instanceId || typeof instanceId !== 'string' || !instanceId.trim()) {
+      return res.status(400).json({ error: 'instanceId is required' });
+    }
+    const id = instanceId.trim();
+    const result = monitorBindingManager.bind(id);
+    if (!result) {
+      return res.status(409).json({ error: 'all monitor slots are claimed' });
+    }
+    return res.json({
+      ok: true,
+      monitorId: result.monitorId,
+      monitorNumber: result.monitorNumber,
+      instanceId: id
+    });
+  });
+
+  app.get('/api/monitor-instance/bind', (req, res) => {
+    const { instanceId } = req.query;
+    if (!instanceId || typeof instanceId !== 'string' || !String(instanceId).trim()) {
+      return res.status(400).json({ error: 'instanceId is required' });
+    }
+    const id = String(instanceId).trim();
+    const monitorId = monitorBindingManager.getMonitorId(id);
+    if (!monitorId) {
+      return res.status(404).json({ error: 'instance not bound' });
+    }
+    const monitorNumber = monitorId === constants.DEVICE_TYPES.MONITOR_1 ? 1 : 2;
+    return res.json({
+      ok: true,
+      monitorId,
+      monitorNumber,
+      instanceId: id
+    });
+  });
+
+  app.post('/api/monitor-instance/release', (req, res) => {
+    const { instanceId } = req.body || {};
+    if (!instanceId || typeof instanceId !== 'string' || !instanceId.trim()) {
+      return res.status(400).json({ error: 'instanceId is required' });
+    }
+    monitorBindingManager.release(instanceId.trim());
+    return res.json({ ok: true });
+  });
+
   app.post('/api/request-monitor', (req, res) => {
-    const { worryId, svgUrl = null, sessionId = null, clientId = null } = req.body || {};
+    const {
+      worryId,
+      svgUrl = null,
+      sessionId = null,
+      clientId = null,
+      displaySeq: rawDisplaySeq
+    } = req.body || {};
+    const displaySeq = parseDisplaySeq(rawDisplaySeq);
 
     if (!worryId) {
       return res.status(400).json({
@@ -75,12 +154,16 @@ function createApp(options = {}) {
     const availableMonitor = monitorManager.findAvailable();
 
     if (availableMonitor) {
-      monitorManager.reserve(availableMonitor, {
+      const reservePayload = {
         worryId,
         clientId: clientId ?? null,
         svgUrl,
         sessionId
-      });
+      };
+      if (displaySeq != null) {
+        reservePayload.displaySeq = displaySeq;
+      }
+      monitorManager.reserve(availableMonitor, reservePayload);
 
       return res.json({
         assigned: true,
@@ -89,13 +172,17 @@ function createApp(options = {}) {
     }
 
     const queueClientId = clientId || `anonymous-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const queueMeta = { svgUrl, sessionId };
+    if (displaySeq != null) {
+      queueMeta.displaySeq = displaySeq;
+    }
     const position = queueManager.add(
       queueClientId,
       worryId,
       (expiredClientId) => {
         logger.warn(`대기 시간 초과: clientId=${expiredClientId}`);
       },
-      { svgUrl, sessionId }
+      queueMeta
     );
 
     return res.json({
@@ -124,11 +211,7 @@ function createApp(options = {}) {
 
     return res.json({
       status: constants.MONITOR_STATUS.BUSY,
-      worry: {
-        worryId: monitor.currentWorry.worryId,
-        svgUrl: monitor.currentWorry.svgUrl ?? null,
-        sessionId: monitor.currentWorry.sessionId ?? null
-      }
+      worry: worryJsonFromCurrent(monitor.currentWorry)
     });
   });
 
@@ -158,11 +241,7 @@ function createApp(options = {}) {
     return res.json({
       ok: true,
       status: constants.MONITOR_STATUS.BUSY,
-      worry: {
-        worryId: m.currentWorry.worryId,
-        svgUrl: m.currentWorry.svgUrl ?? null,
-        sessionId: m.currentWorry.sessionId ?? null
-      }
+      worry: worryJsonFromCurrent(m.currentWorry)
     });
   });
 
@@ -243,7 +322,7 @@ function createApp(options = {}) {
     }
   });
 
-  return { app, monitorManager, queueManager, voteService };
+  return { app, monitorManager, monitorBindingManager, queueManager, voteService };
 }
 
 module.exports = { createApp };
