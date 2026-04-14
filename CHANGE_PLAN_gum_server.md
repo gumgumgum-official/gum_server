@@ -22,6 +22,7 @@
 
 - 빈 모니터( idle + `reservedWorry` 없음 )가 있으면 **`reserve`** → 응답 `assigned: true`
 - 없으면 대기열 `add` → `assigned: false` + `queuePosition` + `clientId`
+- 선택 바디 **`displaySeq`**(1 이상 정수): `reservedWorry` / `currentWorry` / `GET /current`의 `worry`에 포함 → 모니터 「N번째」문구용 (`worryId`는 긴 id일 수 있음)
 
 ### 2) `GET /api/monitors/:monitorId/current` (모니터 폴링)
 
@@ -41,6 +42,12 @@
 ### 5) `GET /api/queue/position?clientId=...`
 
 - 대기열에 없으면 `queuePosition: 0`
+
+### 6) 모니터 인스턴스 바인딩 (동일 URL)
+
+- `POST /api/monitor-instance/bind` — body `instanceId` → `monitor-1` / `monitor-2` 순차 배정, 동일 id는 고정
+- `GET /api/monitor-instance/bind?instanceId=...` — 조회
+- `POST /api/monitor-instance/release` — 슬롯 해제(보조)
 
 ## 구현 위치
 

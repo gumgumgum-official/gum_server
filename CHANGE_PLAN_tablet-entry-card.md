@@ -76,7 +76,8 @@ Content-Type: application/json
 
 | 필드 | 필수 | 타입 | 설명 |
 |------|------|------|------|
-| `worryId` | **예** | string | 고민 ID — **`String(seq)`** 권장 |
+| `worryId` | **예** | string | 고민 ID — **`String(seq)`** 권장, `seq` 없으면 Edge `id` |
+| `displaySeq` | 아니오 | number | **`strokes.seq`가 있으면 반드시** (1 이상 정수). 모니터 「N번째」문구용. 없으면 모니터가 긴 `worryId`를 읽을 수 있음 |
 | `svgUrl` | 아니오 | string \| null | 모니터 표시용 SVG 위치(Storage 공개 URL 등) |
 | `sessionId` | 아니오 | string \| null | 세션 추적용 |
 | `clientId` | 아니오 | string | **대기열 식별자**. 생략 시 대기열에만 넣을 때 서버가 `anonymous-<timestamp>-<랜덤>` 발급 |
@@ -124,10 +125,11 @@ const res = await fetch(`${base}/api/request-monitor`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    worryId: String(seq),
+    worryId: worryIdForGum,
+    ...(typeof seq === 'number' ? { displaySeq: seq } : {}),
     svgUrl: storagePathSvg ?? null,
     sessionId: sessionId ?? null,
-    clientId: tabletClientId ?? undefined, // 대기열 재조회를 위해 세션 고정 ID 권장
+    clientId: tabletClientId ?? undefined,
   }),
 });
 

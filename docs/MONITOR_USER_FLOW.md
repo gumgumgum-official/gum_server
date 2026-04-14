@@ -8,8 +8,8 @@
 | 구분 | 하는 일 |
 |------|--------|
 | **실제 사용자** | 태블릿에 글씨 제출 → 안내된 모니터로 이동 → 모니터 앞에서 체험 → 끝나면 나감 |
-| **태블릿** | 제출 성공 후 `POST /api/request-monitor`로 “이 고민을 모니터에 붙여 달라” 요청. 응답으로 왼쪽/오른쪽 안내 |
-| **모니터 앱** | (프론트가 정한 단계에서) 체험 시작 직전 `POST .../start` → 폴링으로 표시 → 체험 끝·시작 화면으로 `POST .../complete` |
+| **태블릿** | 제출 성공 후 `POST /api/request-monitor`. `assigned: true` 이면 응답의 **`message`(왼쪽/오른쪽 문구)** 또는 **`monitorNumber`(1·2번)** 로 안내 — `bind` API는 태블릿이 쓰지 않음 |
+| **모니터 앱** | 동일 URL이면 부팅 시 `POST /api/monitor-instance/bind`로 `monitor-1`/`monitor-2` 배정 → 체험 시작 직전 `POST .../start` → 폴링으로 표시 → 끝나면 `POST .../complete` |
 | **서버** | 태블릿 요청 시 모니터에 **예약**으로 슬롯 점유 → `start` 시 폴링 응답을 **busy**로 → `complete` 시 비우고 대기자 있으면 **다음 예약** |
 
 ## 순서 (한 세션)
@@ -25,6 +25,7 @@
 
 - **한 모니터에 SVG(고민) 두 건이 동시에 붙지 않는 것**은 `request-monitor` 직후 **`reservedWorry`로 슬롯이 막히기 때문**입니다. 이건 Stage 이름과 무관합니다.
 - **`GET /current`의 `status: busy`** 는 “지금 폴링으로 SVG·문구를 깔아도 되는 구간”을 서버가 알려 주는 값이고, **`start`를 호출한 뒤**에만 켜집니다. (프론트가 몇 단계를 거쳐 `start`를 부를지는 **클라이언트 정책**입니다.)
+- **시작 화면 “도착” 토스트**: 예약만 있는 동안 `GET /current`는 `idle`만 줄 수 있으므로, **`GET /status`의 해당 모니터 `reservedWorry`**(`worryId`·`svgUrl` 등)를 참고합니다. 상세는 [API.md](../API.md) `GET /status` 절.
 - **태블릿**은 “어느 모니터에 붙었는지”까지만 서버 응답으로 받고, 모니터가 언제 `start`를 보내는지는 **모니터 앱**이 결정합니다.
 
 상세 API는 [API.md](../API.md) 참고.

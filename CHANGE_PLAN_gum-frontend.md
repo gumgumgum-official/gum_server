@@ -3,7 +3,7 @@
 이 문서는 `gumgumgum-official/gum-frontend` 레포에서 **모니터(왼쪽/오른쪽 단말)** 가 `gum_server`와 맞춰야 하는 **동작·API·에러 처리**를 정리합니다. (이 레포의 구현 체크리스트·기능명세로 쓸 수 있게 작성했습니다.)
 
 > **정본 스펙**: [API.md](./API.md)  
-> **역할 분리**: 모니터는 **`GET /api/monitors/:monitorId/current`**, **`POST .../start`**, **`POST .../complete`** 만 사용합니다. **`POST /api/request-monitor`** 는 **태블릿 전용**입니다.  
+> **역할 분리**: 모니터는 부팅 시 **`POST /api/monitor-instance/bind`**(동일 URL)로 `monitorId`를 받은 뒤, **`GET /api/monitors/:monitorId/current`**, **`POST .../start`**, **`POST .../complete`** 로 체험 흐름을 맞춥니다. **시작 화면 “도착” 토스트**에는 **`GET /status`**(해당 `monitorId`의 `reservedWorry`)를 추가로 씁니다. **`POST /api/request-monitor`** 는 **태블릿 전용**입니다.  
 > **Stage2·Stage3·Stage6** 등은 **gum-frontend 화면 단계** 이름이며, 서버는 **`start` / `complete` 호출**과 `idle`/`busy`만 구분합니다.  
 > 흐름 요약: [docs/MONITOR_USER_FLOW.md](./docs/MONITOR_USER_FLOW.md)  
 > 레포 구조·라우트: [gum-frontend](https://github.com/gumgumgum-official/gum-frontend) README
@@ -16,7 +16,7 @@
 |------|------|
 | Base URL | 개발: `http://localhost:3000` — 프로덕션은 배포된 `gum_server` URL (`GUM_SERVER_URL` 등 환경변수) |
 | 프로토콜 | HTTP/HTTPS JSON, **Socket.io 없음** |
-| 모니터 ID | 서버 상수 **`monitor-1`** \| **`monitor-2`** 만 유효. **설치된 물리 모니터마다 하나씩 고정** (왼쪽=1, 오른쪽=2 등 기획에 맞게 매핑) |
+| 모니터 ID | 서버 상수 **`monitor-1`** \| **`monitor-2`** 만 유효. **동일 URL**로 두 대를 띄울 때는 앱 부팅 시 **`POST /api/monitor-instance/bind`** 로 `instanceId`(localStorage UUID)를 보내 배정받음 — [API.md](./API.md) §2-1. (선택: 전시장에서만 빌드별 환경변수로 고정해도 됨) |
 
 ### 상태 의미 (서버)
 
@@ -34,9 +34,17 @@
 
 - **Stage2(빔 등)**: 기존 유지 (Storage·Realtime 등 — 제품 요구에 따름)
 - **모니터 라우트**: 할당 표시·체험 시작·종료를 **gum_server REST** 로만 맞출 것
-  - **데이터 1순위**: `GET .../current` 폴링 — `busy`일 때 `worry.svgUrl`·`worry.worryId`
+  - **체험 중 표시**: `GET .../current` 폴링 — `busy`일 때 `worry.svgUrl`·`worry.worryId`
+  - **시작 화면 “도착” 토스트**: `GET /status`에서 **이 기기의 `monitorId` 키** 아래 `reservedWorry`가 있으면 표시 (`worryId`·`svgUrl`은 이후 `GET /current`의 `worry`와 동일 출처 — [API.md](./API.md) `GET /status` 절)
   - **보조**: Realtime/Storage fallback은 **예외·디버그용**으로만 (정상 경로는 서버 폴링과 일치)
-- **문구**: `${worry.worryId}번째 고민이 도착했습니다` (`worryId`는 태블릿 `seq`와 동일 문자열)
+- **문구**: **`reservedWorry.displaySeq` 또는 `worry.displaySeq`가 있으면** 「`${displaySeq}번째 고민이 도착했습니다`」. **없으면** 「고민이 도착했습니다」— 긴 Edge `worryId`를 그대로 붙이지 않음 ([API.md](./API.md) `displaySeq`)
+
+### 시작 화면 구현 (`StartPage.jsx` 등)
+
+1. **폴링**: `GET {base}/status` (간격은 `GET /current`와 맞추거나 1~2초).
+2. `data.monitors[monitorId].reservedWorry` 가 **비어 있지 않으면** 토스트 — `reservedWorry.displaySeq` 있으면 「N번째」, 없으면 일반 문구 ( **`worryId` 원문 노출 비권장** ).
+3. 체험 화면(Stage3 이후)에서는 기존대로 **`GET .../current`** 가 `busy`일 때 `worry`로 SVG·문구 표시.
+4. `reservedWorry`가 있는데 아직 `start` 전이면 `current`는 `idle`일 수 있음 — **정상**이며, 토스트는 `/status` 기준으로만 띄우면 됨.
 
 ---
 
@@ -178,8 +186,15 @@ Body 없음 가능.
 
 ```ts
 const base = GUM_SERVER_URL.replace(/\/$/, '');
-// 배포 단위로 고정: 'monitor-1' | 'monitor-2' (환경변수·빌드 플래그 등)
-const monitorId = 'monitor-1';
+// 동일 URL: localStorage에 둔 instanceId로 bind
+const instanceId = localStorage.getItem('gum_monitor_instance_id') ?? crypto.randomUUID();
+localStorage.setItem('gum_monitor_instance_id', instanceId);
+const bindRes = await fetch(`${base}/api/monitor-instance/bind`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ instanceId }),
+});
+const { monitorId } = await bindRes.json(); // 'monitor-1' | 'monitor-2'
 
 // Stage3 진입(체험 시작)
 const startRes = await fetch(`${base}/api/monitors/${monitorId}/start`, {
@@ -216,7 +231,7 @@ await fetch(`${base}/api/monitors/${monitorId}/complete`, { method: 'POST' });
 | 메서드 | 경로 | 용도 |
 |--------|------|------|
 | GET | `/health` | 서버·큐 길이·uptime |
-| GET | `/status` | `monitors` 전체, `reservedWorry` / `currentWorry` 확인 |
+| GET | `/status` | 시작 화면 토스트용 `reservedWorry`, 디버깅용 전체 상태 |
 
 프로덕션에서 과도한 폴링은 부하 — **1~2초 간격** 정도를 권장 ([API.md](./API.md)와 동일).
 
@@ -227,7 +242,7 @@ await fetch(`${base}/api/monitors/${monitorId}/complete`, { method: 'POST' });
 | 주체 | API |
 |------|-----|
 | 태블릿 | `POST /api/request-monitor`, (선택) `GET /api/queue/position` |
-| 모니터 | `start`, `current`, `complete` |
+| 모니터 | `POST /api/monitor-instance/bind`, `start`, `current`, `complete`, (시작 화면) `GET /status` |
 
 태블릿 쪽 상세: [CHANGE_PLAN_tablet-entry-card.md](./CHANGE_PLAN_tablet-entry-card.md)
 

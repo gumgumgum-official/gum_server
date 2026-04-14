@@ -112,9 +112,18 @@ GET /ping
 
 ---
 
-### 2. 상태 조회 (디버깅용)
+### 2. 상태 조회 (`GET /status`)
 
-상세 서버 상태 조회
+**전체 모니터 객체**(예약·진행 중 고민 포함)를 한 번에 조회합니다. 운영·디버깅뿐 아니라, **모니터 시작 화면에서 “고민 도착” 토스트**를 띄울 때도 사용합니다.
+
+**왜 필요한가**  
+예약만 잡힌 단계(`reservedWorry`만 있고 아직 `POST .../start` 전)에서는 **`GET /api/monitors/:monitorId/current`가 `status: "idle"`만** 줄 수 있습니다. 이 구간에서 “N번째 고민이 도착했습니다” 같은 안내가 필요하면, **해당 모니터의 `monitors[monitorId].reservedWorry`** 를 참고합니다.
+
+**필드 일관성**  
+`reservedWorry`의 `worryId`·`svgUrl`·`sessionId`는 `POST .../start` 이후 **`GET .../current`의 `worry`**(및 `start` 응답의 `worry`)와 **같은 데이터 출처**입니다. (예약 시점에 서버가 넣은 값이 `start` 때 `currentWorry`로 올라갑니다.)
+
+**운영 정책**  
+프로덕션에서 `GET /status`를 끄거나 응답을 축소할 경우, 모니터 앱은 이 토스트 경로를 쓸 수 없습니다. 그때는 **`GET .../current`에 예약 단계를 노출**하거나 **전용 경량 API**를 추가한 뒤, **본 문서(API.md)를 먼저 갱신**하고 클라이언트를 맞춥니다.
 
 **요청**
 
@@ -132,6 +141,7 @@ GET /status
       "currentWorry": null,
       "reservedWorry": {
         "worryId": "12",
+        "displaySeq": 12,
         "svgUrl": "https://example.com/a.svg",
         "sessionId": "sess"
       },
@@ -160,9 +170,72 @@ GET /status
 | `monitors` | object | 모니터 상세 상태 |
 | `monitors[].status` | string | 모니터 상태 |
 | `monitors[].currentWorry` | object\|null | Stage3 진행 중인 고민 (`busy`일 때) |
-| `monitors[].reservedWorry` | object\|null | 태블릿/대기열에서 붙었으나 `start` 전 예약 |
+| `monitors[].reservedWorry` | object\|null | 태블릿/대기열에서 붙었으나 `start` 전 예약. **`worryId`·`svgUrl`·`sessionId`·`displaySeq`(선택)** 는 이후 `GET .../current`의 `worry`와 동일 의미 |
 | `monitors[].clientId` | string\|null | 마지막 예약·할당 시 `clientId` |
 | `queueLength` | number | 대기열 길이 |
+
+**모니터 앱(시작 화면) 구현 힌트**
+
+- **동일 URL**로 두 대를 띄울 때는 먼저 [2-1. 모니터 인스턴스 슬롯 배정](#2-1-모니터-인스턴스-슬롯-배정-동일-url)으로 `monitorId`를 받습니다.
+- 그 `monitorId`로 `GET /status`를 주기적으로 호출(예: 1~2초)하거나, `GET /current` 폴링과 같은 주기로 함께 호출합니다.
+- `reservedWorry != null` 이면 토스트: **`displaySeq`가 있으면** 「`${displaySeq}번째 고민이 도착했습니다`」, **없으면** 「고민이 도착했습니다」 등 — **`worryId` 전체를 문구에 넣지 않는 것을 권장** (긴 Edge `id`일 수 있음).
+- `GET /current`가 `busy`이면 체험 중 UI는 **`current`의 `worry`** 를 우선(또는 `start` 직후 응답과 동일하게 처리).
+
+---
+
+### 2-1. 모니터 인스턴스 슬롯 배정 (동일 URL)
+
+왼쪽·오른쪽 모니터가 **같은 gum-frontend URL**을 연 경우, 빌드마다 다른 환경변수를 줄 수 없으므로 **브라우저별 고정 ID**로 서버에 슬롯을 예약합니다.
+
+**클라이언트**
+
+1. 앱 최초 실행 시 `instanceId`를 생성(권장: `crypto.randomUUID()`)해 **`localStorage` 등에 영구 저장**.
+2. 앱 부팅 시 `POST /api/monitor-instance/bind`에 `instanceId`를 보냄.
+3. 응답의 `monitorId`로 이후 `GET /status`, `GET .../current`, `POST .../start`, `POST .../complete` 호출.
+
+**규칙**
+
+- **같은 `instanceId`** → 항상 **같은 `monitorId`** (재방문·새로고침 유지).
+- 서버에 처음 붙는 순서대로 `monitor-1`, 다음은 `monitor-2`에 배정됩니다.
+- **세 번째** 브라우저(서로 다른 `instanceId`)는 `409` — 전시 전 **두 대만** 열려 있어야 합니다.
+- **서버 재시작** 시 매핑이 비워지므로, 다시 붙는 **순서**에 따라 왼쪽/오른쪽이 바뀔 수 있습니다. 전시 운영에서는 재시작 직후 두 모니터를 **한 번씩 새로고침**해 재배정하거나, 고정이 필요하면 추후 영속 저장·수동 지정 스펙을 추가합니다.
+
+#### `POST /api/monitor-instance/bind`
+
+**Body**
+
+| 필드 | 필수 | 타입 | 설명 |
+|------|------|------|------|
+| `instanceId` | 예 | string | 브라우저별 고정 UUID 등 |
+
+**응답 `200`**
+
+```json
+{
+  "ok": true,
+  "monitorId": "monitor-1",
+  "monitorNumber": 1,
+  "instanceId": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**에러**
+
+- `400` — `{ "error": "instanceId is required" }`
+- `409` — `{ "error": "all monitor slots are claimed" }`
+
+#### `GET /api/monitor-instance/bind?instanceId=<id>`
+
+이미 배정된 경우 조회만 (새로고침 후 `monitorId` 복구).
+
+**에러**
+
+- `400` — `instanceId` 누락
+- `404` — `{ "error": "instance not bound" }`
+
+#### `POST /api/monitor-instance/release` (운영·개발 보조)
+
+특정 브라우저 슬롯을 비웁니다. Body: `{ "instanceId": "..." }`. 응답 `200` `{ "ok": true }` (없던 id도 성공 처리).
 
 ---
 
@@ -181,7 +254,8 @@ Content-Type: application/json
 
 | 필드 | 필수 | 타입 | 설명 |
 |------|------|------|------|
-| `worryId` | 예 | string | 고민 ID |
+| `worryId` | 예 | string | 고민 ID (내부·동기화용. Edge `id`처럼 긴 문자열 가능) |
+| `displaySeq` | 아니오 | number | **방문객 문구용 순번** (1 이상 정수). 있으면 모니터는 「N번째 고민」에 이 값을 쓰고, `worryId`는 화면에 노출하지 않아도 됨 |
 | `svgUrl` | 아니오 | string\|null | SVG URL (모니터 표시용) |
 | `sessionId` | 아니오 | string\|null | 세션 ID |
 | `clientId` | 아니오 | string | 대기열 식별자. 없으면 서버가 `anonymous-...` 생성 |
@@ -196,6 +270,14 @@ Content-Type: application/json
   "message": "👈 왼쪽 껌딱지월드로 가세요"
 }
 ```
+
+**태블릿 안내 (이 응답만 쓰면 됨)**
+
+- **`message`**: 서버가 이미 왼쪽/오른쪽 문구를 넣어 줍니다 (`monitorNumber === 1` → 왼쪽, `2` → 오른쪽).
+- **`monitorNumber`**: `1` 또는 `2` — UI에서 「**1번 모니터**로 가세요」「**2번 모니터**로 가세요」처럼 써도 됩니다.
+- **`monitorId`**: `monitor-1` / `monitor-2` — 로그·디버그용.
+- **`displaySeq`**: DB `strokes.seq` 등이 있으면 **반드시 같이 보내는 것을 권장**합니다. 없으면 모니터 토스트가 긴 `worryId` 문자열을 읽게 될 수 있습니다.
+- **`POST /api/monitor-instance/bind`는 태블릿이 부르지 않습니다.** 동일 URL로 띄운 **모니터 PC 브라우저 두 대**가 “내가 1번 슬롯인지 2번 슬롯인지” 맞출 때만 사용합니다. 태블릿은 **`request-monitor` 응답만**으로 방문객 안내하면 됩니다.
 
 **응답 — 대기 (`assigned: false`)**
 
@@ -241,11 +323,14 @@ GET /api/monitors/:monitorId/current
   "status": "busy",
   "worry": {
     "worryId": "67abc123...",
+    "displaySeq": 78,
     "svgUrl": "https://example.com/worry.svg",
     "sessionId": "sess-uuid"
   }
 }
 ```
+
+`displaySeq`는 `request-monitor`에 넘긴 경우에만 포함됩니다. UI 문구는 **`displaySeq`가 있으면 「${displaySeq}번째 고민」**, 없으면 `worryId`를 쓰지 않고 「고민이 도착했습니다」 등 일반 문구를 권장합니다.
 
 **에러**
 
@@ -274,6 +359,7 @@ Body: 생략 가능 `{}`
   "status": "busy",
   "worry": {
     "worryId": "67abc123...",
+    "displaySeq": 78,
     "svgUrl": "https://example.com/worry.svg",
     "sessionId": "sess-uuid"
   }
