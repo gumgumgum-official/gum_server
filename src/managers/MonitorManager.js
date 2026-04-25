@@ -1,3 +1,5 @@
+const constants = require('../utils/constants');
+
 /**
  * 모니터 상태 관리 클래스
  *
@@ -14,9 +16,20 @@
  *   },
  *   ...
  * }
+ *
+ * UUID 등 추가 ID는 reserve/start 전 ensureMonitor 로 슬롯을 만든다.
  */
 
 class MonitorManager {
+  emptyMonitorState() {
+    return {
+      status: 'idle',
+      currentWorry: null,
+      reservedWorry: null,
+      clientId: null
+    };
+  }
+
   constructor() {
     this.monitors = {
       'monitor-1': {
@@ -32,6 +45,20 @@ class MonitorManager {
         clientId: null
       }
     };
+  }
+
+  /**
+   * 동적 모니터 슬롯 생성 (UUID 키오스크 등). 레지스트리 상한 초과 시 에러.
+   * @param {string} monitorId
+   * @throws {Error} registry full
+   */
+  ensureMonitor(monitorId) {
+    if (this.monitors[monitorId]) return;
+    const max = constants.MAX_MONITOR_REGISTRY_SIZE;
+    if (Object.keys(this.monitors).length >= max) {
+      throw new Error('monitor registry full');
+    }
+    this.monitors[monitorId] = this.emptyMonitorState();
   }
 
   /**
@@ -52,6 +79,7 @@ class MonitorManager {
    * @param {object} worryData - { worryId, clientId?, svgUrl?, sessionId?, displaySeq? }
    */
   reserve(monitorId, worryData) {
+    this.ensureMonitor(monitorId);
     const row = {
       worryId: worryData.worryId,
       svgUrl: worryData.svgUrl ?? null,
@@ -73,6 +101,7 @@ class MonitorManager {
    * @throws {Error} 예약 없음 또는 이미 busy
    */
   start(monitorId) {
+    this.ensureMonitor(monitorId);
     const m = this.monitors[monitorId];
     if (m.status === 'busy') {
       throw new Error('already busy');
@@ -97,15 +126,18 @@ class MonitorManager {
    * Stage6 종료 등 — 체험만 종료, 예약은 건드리지 않음(complete 직후 dequeue·reserve에서 설정)
    */
   release(monitorId) {
+    if (!this.monitors[monitorId]) return;
     this.monitors[monitorId].status = 'idle';
     this.monitors[monitorId].currentWorry = null;
   }
 
   getStatus() {
-    return {
-      'monitor-1': this.monitors['monitor-1'].status,
-      'monitor-2': this.monitors['monitor-2'].status
-    };
+    /** @type {Record<string, string>} */
+    const out = {};
+    for (const [id, m] of Object.entries(this.monitors)) {
+      out[id] = m.status;
+    }
+    return out;
   }
 }
 

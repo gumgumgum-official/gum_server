@@ -7,9 +7,11 @@ const MonitorManager = require('./src/managers/MonitorManager');
 const MonitorBindingManager = require('./src/managers/MonitorBindingManager');
 const QueueManager = require('./src/managers/QueueManager');
 const VoteService = require('./src/services/VoteService');
+const ScoreService = require('./src/services/ScoreService');
 const supabase = require('./src/config/supabase');
 const logger = require('./src/utils/logger');
 const constants = require('./src/utils/constants');
+const { isValidMonitorIdParam, normalizeMonitorIdParam } = require('./src/utils/monitorId');
 
 /**
  * Express 앱과 매니저 인스턴스를 생성합니다. (테스트에서 격리된 인스턴스 사용)
@@ -19,6 +21,7 @@ function createApp(options = {}) {
   const monitorBindingManager = options.monitorBindingManager || new MonitorBindingManager();
   const queueManager = new QueueManager();
   const voteService = options.voteService || new VoteService(supabase);
+  const scoreService = options.scoreService || new ScoreService(supabase);
 
   const app = express();
 
@@ -29,18 +32,19 @@ function createApp(options = {}) {
 
   app.use(express.json());
 
-  function isValidMonitorId(monitorId) {
-    return constants.MONITOR_IDS.includes(monitorId);
-  }
-
   function createAssignedResponse(monitorId) {
-    const monitorNumber = monitorId === constants.DEVICE_TYPES.MONITOR_1 ? 1 : 2;
+    const legacy = constants.MONITOR_IDS.includes(monitorId);
+    const monitorNumber = legacy
+      ? (monitorId === constants.DEVICE_TYPES.MONITOR_1 ? 1 : 2)
+      : null;
     return {
       monitorId,
       monitorNumber,
-      message: monitorNumber === 1
-        ? '👈 왼쪽 껌딱지월드로 가세요'
-        : '👉 오른쪽 껌딱지월드로 가세요'
+      message: legacy
+        ? (monitorNumber === 1
+          ? '👈 왼쪽 껌딱지월드로 가세요'
+          : '👉 오른쪽 껌딱지월드로 가세요')
+        : '👉 할당된 모니터로 이동해 주세요'
     };
   }
 
@@ -141,7 +145,8 @@ function createApp(options = {}) {
       svgUrl = null,
       sessionId = null,
       clientId = null,
-      displaySeq: rawDisplaySeq
+      displaySeq: rawDisplaySeq,
+      monitorId: rawTargetMonitorId
     } = req.body || {};
     const displaySeq = parseDisplaySeq(rawDisplaySeq);
 
@@ -151,7 +156,30 @@ function createApp(options = {}) {
       });
     }
 
-    const availableMonitor = monitorManager.findAvailable();
+    const targetMonitorId = normalizeMonitorIdParam(rawTargetMonitorId);
+
+    /** @type {string|null} */
+    let availableMonitor = null;
+
+    if (targetMonitorId) {
+      try {
+        monitorManager.ensureMonitor(targetMonitorId);
+        const m = monitorManager.monitors[targetMonitorId];
+        if (m.status === constants.MONITOR_STATUS.IDLE && !m.reservedWorry) {
+          availableMonitor = targetMonitorId;
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg === 'monitor registry full') {
+          return res.status(503).json({ error: 'monitor registry full' });
+        }
+        throw e;
+      }
+    }
+
+    if (!availableMonitor) {
+      availableMonitor = monitorManager.findAvailable();
+    }
 
     if (availableMonitor) {
       const reservePayload = {
@@ -163,7 +191,15 @@ function createApp(options = {}) {
       if (displaySeq != null) {
         reservePayload.displaySeq = displaySeq;
       }
-      monitorManager.reserve(availableMonitor, reservePayload);
+      try {
+        monitorManager.reserve(availableMonitor, reservePayload);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg === 'monitor registry full') {
+          return res.status(503).json({ error: 'monitor registry full' });
+        }
+        throw e;
+      }
 
       return res.json({
         assigned: true,
@@ -196,7 +232,7 @@ function createApp(options = {}) {
   app.get('/api/monitors/:monitorId/current', (req, res) => {
     const { monitorId } = req.params;
 
-    if (!isValidMonitorId(monitorId)) {
+    if (!isValidMonitorIdParam(monitorId)) {
       return res.status(400).json({
         error: 'invalid monitorId'
       });
@@ -218,7 +254,7 @@ function createApp(options = {}) {
   app.post('/api/monitors/:monitorId/start', (req, res) => {
     const { monitorId } = req.params;
 
-    if (!isValidMonitorId(monitorId)) {
+    if (!isValidMonitorIdParam(monitorId)) {
       return res.status(400).json({
         error: 'invalid monitorId'
       });
@@ -234,6 +270,9 @@ function createApp(options = {}) {
       if (msg === 'already busy') {
         return res.status(409).json({ error: 'monitor already busy' });
       }
+      if (msg === 'monitor registry full') {
+        return res.status(503).json({ error: 'monitor registry full' });
+      }
       throw e;
     }
 
@@ -248,7 +287,7 @@ function createApp(options = {}) {
   app.post('/api/monitors/:monitorId/complete', (req, res) => {
     const { monitorId } = req.params;
 
-    if (!isValidMonitorId(monitorId)) {
+    if (!isValidMonitorIdParam(monitorId)) {
       return res.status(400).json({
         error: 'invalid monitorId'
       });
@@ -322,7 +361,37 @@ function createApp(options = {}) {
     }
   });
 
-  return { app, monitorManager, monitorBindingManager, queueManager, voteService };
+  app.post('/api/scores', async (req, res) => {
+    const { userId, score } = req.body || {};
+
+    if (!userId || typeof userId !== 'string' || !userId.trim()) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+    const parsedScore = Number(score);
+    if (!Number.isInteger(parsedScore) || parsedScore < 0) {
+      return res.status(400).json({ error: 'score must be a non-negative integer' });
+    }
+
+    try {
+      const resolvedUserId = await scoreService.addScore({ userId: userId.trim(), score: parsedScore });
+      return res.status(201).json({ ok: true, userId: resolvedUserId, score: parsedScore });
+    } catch (error) {
+      logger.error('점수 등록 실패:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  app.get('/api/scores/leaderboard', async (req, res) => {
+    try {
+      const leaderboard = await scoreService.getLeaderboard();
+      return res.status(200).json({ leaderboard });
+    } catch (error) {
+      logger.error('리더보드 조회 실패:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  return { app, monitorManager, monitorBindingManager, queueManager, voteService, scoreService };
 }
 
 module.exports = { createApp };

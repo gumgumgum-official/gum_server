@@ -138,7 +138,7 @@ server/
 ### REST API (요약)
 
 - `GET /health`, `GET /ping`, `GET /status`
-- `POST /api/request-monitor` — 태블릿 모니터 요청(예약)
+- `POST /api/request-monitor` — 태블릿 모니터 요청(예약). 선택 필드 `monitorId`(UUID 또는 monitor-1/2)로 특정 키오스크 슬롯에 예약 가능
 - `POST /api/monitors/:monitorId/start` — Stage3 시작 → busy
 - `GET /api/monitors/:monitorId/current` — 모니터 폴링
 - `POST /api/monitors/:monitorId/complete` — Stage6 종료 → idle

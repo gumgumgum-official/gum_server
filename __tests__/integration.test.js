@@ -53,6 +53,20 @@ describe('REST API 통합', () => {
         .send({})
         .expect(400);
     });
+
+    test('body.monitorId 가 UUID면 해당 슬롯에 예약', async () => {
+      const uuid = 'aaaaaaaa-bbbb-4ccc-dddd-eeeeeeeeeeee';
+      const res = await request(app)
+        .post('/api/request-monitor')
+        .send({ worryId: 'w-uuid', clientId: 'tab-u', monitorId: uuid })
+        .expect(200);
+
+      expect(res.body.assigned).toBe(true);
+      expect(res.body.monitorId).toBe(uuid);
+      expect(res.body.monitorNumber).toBeNull();
+      expect(monitorManager.monitors[uuid].reservedWorry.worryId).toBe('w-uuid');
+      expect(monitorManager.monitors['monitor-1'].reservedWorry).toBeNull();
+    });
   });
 
   describe('GET /api/monitors/:monitorId/current', () => {
@@ -116,6 +130,34 @@ describe('REST API 통합', () => {
       await request(app)
         .get('/api/monitors/monitor-99/current')
         .expect(400);
+    });
+
+    test('등록 전 UUID 슬롯 조회는 idle (슬롯 생성 없음)', async () => {
+      const uuid = '11111111-2222-4333-8444-555555555555';
+      const res = await request(app)
+        .get(`/api/monitors/${uuid}/current`)
+        .expect(200);
+      expect(res.body.status).toBe('idle');
+      expect(monitorManager.monitors[uuid]).toBeUndefined();
+    });
+
+    test('UUID 슬롯 예약·start 후 current busy', async () => {
+      const uuid = '22222222-3333-4444-8555-666666666666';
+      await request(app)
+        .post('/api/request-monitor')
+        .send({
+          worryId: 'w-u2',
+          svgUrl: 'https://ex/u.svg',
+          monitorId: uuid
+        });
+
+      await request(app).post(`/api/monitors/${uuid}/start`).send({}).expect(200);
+
+      const res = await request(app)
+        .get(`/api/monitors/${uuid}/current`)
+        .expect(200);
+      expect(res.body.status).toBe('busy');
+      expect(res.body.worry.worryId).toBe('w-u2');
     });
   });
 

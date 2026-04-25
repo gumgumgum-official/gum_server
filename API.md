@@ -259,6 +259,7 @@ Content-Type: application/json
 | `svgUrl` | 아니오 | string\|null | SVG URL (모니터 표시용) |
 | `sessionId` | 아니오 | string\|null | 세션 ID |
 | `clientId` | 아니오 | string | 대기열 식별자. 없으면 서버가 `anonymous-...` 생성 |
+| `monitorId` | 아니오 | string | **키오스크 고정 ID**(표준 UUID `8-4-4-4-12` 또는 `monitor-1` / `monitor-2`). 해당 슬롯이 `idle`이고 예약이 없을 때만 여기로 예약하고, 이미 점유·busy면 기존 규칙대로 다른 빈 슬롯 또는 대기열 |
 
 **응답 — 즉시 할당 (`assigned: true`)**
 
@@ -275,7 +276,8 @@ Content-Type: application/json
 
 - **`message`**: 서버가 이미 왼쪽/오른쪽 문구를 넣어 줍니다 (`monitorNumber === 1` → 왼쪽, `2` → 오른쪽).
 - **`monitorNumber`**: `1` 또는 `2` — UI에서 「**1번 모니터**로 가세요」「**2번 모니터**로 가세요」처럼 써도 됩니다.
-- **`monitorId`**: `monitor-1` / `monitor-2` — 로그·디버그용.
+- **`monitorId`**: 예약이 잡힌 슬롯 ID (`monitor-1` / `monitor-2` 또는 태블릿이 넘긴 UUID).
+- **`monitorNumber`**: 레거시 두 대 전시일 때만 `1` / `2`. UUID 슬롯이면 `null`이며, 안내 문구는 `message`를 따릅니다.
 - **`displaySeq`**: DB `strokes.seq` 등이 있으면 **반드시 같이 보내는 것을 권장**합니다. 없으면 모니터 토스트가 긴 `worryId` 문자열을 읽게 될 수 있습니다.
 - **`POST /api/monitor-instance/bind`는 태블릿이 부르지 않습니다.** 동일 URL로 띄운 **모니터 PC 브라우저 두 대**가 “내가 1번 슬롯인지 2번 슬롯인지” 맞출 때만 사용합니다. 태블릿은 **`request-monitor` 응답만**으로 방문객 안내하면 됩니다.
 
@@ -293,6 +295,7 @@ Content-Type: application/json
 **에러**
 
 - `400` — `worryId` 누락: `{ "error": "worryId is required" }`
+- `503` — 동적 모니터 슬롯 수가 상한(`MAX_MONITOR_REGISTRY_SIZE`, 기본 64) 초과: `{ "error": "monitor registry full" }`
 
 ---
 
@@ -306,7 +309,9 @@ Content-Type: application/json
 GET /api/monitors/:monitorId/current
 ```
 
-`monitorId`: `monitor-1` \| `monitor-2`
+`monitorId`: `monitor-1` \| `monitor-2` \| 표준 **UUID** (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`). 그 외 형식은 `400 invalid monitorId`.
+
+**참고**: 아직 한 번도 예약·시작되지 않은 UUID에 대해 조회만 하면 `idle`이며, 이 요청만으로는 슬롯이 생기지 않습니다.
 
 **응답 — 유휴**
 
@@ -371,6 +376,7 @@ Body: 생략 가능 `{}`
 - `400` — `{ "error": "invalid monitorId" }`
 - `409` — 예약 없음: `{ "error": "no reservation for this monitor" }`
 - `409` — 이미 busy: `{ "error": "monitor already busy" }`
+- `503` — `{ "error": "monitor registry full" }` (슬롯 상한; 일반적으로 드묾)
 
 ---
 
