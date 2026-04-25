@@ -53,6 +53,22 @@ create index if not exists idx_votes_created_at on public.votes (created_at);
 
 중복 투표를 제한하려면 정책에 맞게 `session_id` 또는 `client_id`에 유니크 인덱스를 추가합니다.
 
+### Supabase `game_scores` 테이블 (점수 API)
+
+점수 API(`POST /api/scores`, `GET /api/scores/leaderboard`)는 아래 `game_scores` 테이블을 기준으로 동작합니다.
+
+```sql
+create table if not exists public.game_scores (
+  id bigint generated always as identity primary key,
+  user_id text not null,
+  score integer not null check (score >= 0),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_game_scores_user_id on public.game_scores (user_id);
+create index if not exists idx_game_scores_created_at on public.game_scores (created_at);
+```
+
 ---
 
 ### 1. 헬스 체크
@@ -116,13 +132,13 @@ GET /ping
 
 **전체 모니터 객체**(예약·진행 중 고민 포함)를 한 번에 조회합니다. 운영·디버깅뿐 아니라, **모니터 시작 화면에서 “고민 도착” 토스트**를 띄울 때도 사용합니다.
 
-**왜 필요한가**  
+**왜 필요한가**
 예약만 잡힌 단계(`reservedWorry`만 있고 아직 `POST .../start` 전)에서는 **`GET /api/monitors/:monitorId/current`가 `status: "idle"`만** 줄 수 있습니다. 이 구간에서 “N번째 고민이 도착했습니다” 같은 안내가 필요하면, **해당 모니터의 `monitors[monitorId].reservedWorry`** 를 참고합니다.
 
-**필드 일관성**  
+**필드 일관성**
 `reservedWorry`의 `worryId`·`svgUrl`·`sessionId`는 `POST .../start` 이후 **`GET .../current`의 `worry`**(및 `start` 응답의 `worry`)와 **같은 데이터 출처**입니다. (예약 시점에 서버가 넣은 값이 `start` 때 `currentWorry`로 올라갑니다.)
 
-**운영 정책**  
+**운영 정책**
 프로덕션에서 `GET /status`를 끄거나 응답을 축소할 경우, 모니터 앱은 이 토스트 경로를 쓸 수 없습니다. 그때는 **`GET .../current`에 예약 단계를 노출**하거나 **전용 경량 API**를 추가한 뒤, **본 문서(API.md)를 먼저 갱신**하고 클라이언트를 맞춥니다.
 
 **요청**
@@ -237,6 +253,10 @@ GET /status
 
 특정 브라우저 슬롯을 비웁니다. Body: `{ "instanceId": "..." }`. 응답 `200` `{ "ok": true }` (없던 id도 성공 처리).
 
+**에러**
+
+- `400` — `{ "error": "instanceId is required" }`
+
 ---
 
 ### 3. 모니터 할당 요청 (태블릿)
@@ -259,7 +279,7 @@ Content-Type: application/json
 | `svgUrl` | 아니오 | string\|null | SVG URL (모니터 표시용) |
 | `sessionId` | 아니오 | string\|null | 세션 ID |
 | `clientId` | 아니오 | string | 대기열 식별자. 없으면 서버가 `anonymous-...` 생성 |
-| `monitorId` | 아니오 | string | **키오스크 고정 ID**(표준 UUID `8-4-4-4-12` 또는 `monitor-1` / `monitor-2`). 해당 슬롯이 `idle`이고 예약이 없을 때만 여기로 예약하고, 이미 점유·busy면 기존 규칙대로 다른 빈 슬롯 또는 대기열 |
+| `monitorId` | 아니오 | string | **키오스크 고정 ID**(표준 UUID `8-4-4-4-12` 또는 `monitor-1` / `monitor-2`). 해당 슬롯이 `idle`이고 예약이 없을 때만 여기로 예약하고, 이미 점유·busy면 기존 규칙대로 다른 빈 슬롯 또는 대기열. **형식이 유효하지 않으면(예: `monitor-99`) 강제 에러 없이 일반 규칙(빈 슬롯 탐색→대기열)으로 처리** |
 
 **응답 — 즉시 할당 (`assigned: true`)**
 
@@ -518,6 +538,81 @@ GET /api/votes/results
 
 ---
 
+### 10. 점수 등록 (Supabase)
+
+점수 1건을 저장합니다. 입력한 `userId`가 이미 존재하면 서버가 자동으로 접미사(`2`, `3`, ...)를 붙여 **고유한 `userId`로 저장**합니다.
+
+**요청**
+
+```http
+POST /api/scores
+Content-Type: application/json
+```
+
+**Body**
+
+| 필드 | 필수 | 타입 | 설명 |
+|------|------|------|------|
+| `userId` | 예 | string | 유저 식별자 (빈 문자열 불가, trim 후 사용). 기존과 중복되면 서버가 `userId2`, `userId3`처럼 변경 저장 |
+| `score` | 예 | number | 0 이상의 정수 |
+
+**응답 `201`**
+
+```json
+{
+  "ok": true,
+  "userId": "player-0012",
+  "score": 120
+}
+```
+
+`userId`는 **저장에 실제 사용된 값**입니다(중복 해소로 입력값과 달라질 수 있음).
+
+**에러**
+
+- `400` — `userId` 누락/공백: `{ "error": "userId is required" }`
+- `400` — `score` 형식 오류(정수 아님 또는 음수): `{ "error": "score must be a non-negative integer" }`
+- `500` — `{ "error": "Internal Server Error" }`
+
+---
+
+### 11. 리더보드 조회 (Supabase)
+
+누적 점수 기준 리더보드를 조회합니다.
+
+**요청**
+
+```http
+GET /api/scores/leaderboard
+```
+
+**응답 `200`**
+
+```json
+{
+  "leaderboard": [
+    {
+      "id": 1,
+      "userId": "player-001",
+      "totalScore": 320
+    },
+    {
+      "id": 2,
+      "userId": "player-002",
+      "totalScore": 280
+    }
+  ]
+}
+```
+
+`leaderboard` 항목 구조(`id`, `userId`, `totalScore`)는 `ScoreService.getLeaderboard()` 구현을 따릅니다.
+
+**에러**
+
+- `500` — `{ "error": "Internal Server Error" }`
+
+---
+
 
 ## 에러 응답
 
@@ -620,6 +715,10 @@ curl -X POST http://localhost:3000/api/votes \
   -H "Content-Type: application/json" \
   -d '{"candidate":2,"sessionId":"sess-001","clientId":"curl-client"}'
 curl http://localhost:3000/api/votes/results
+curl -X POST http://localhost:3000/api/scores \
+  -H "Content-Type: application/json" \
+  -d '{"userId":"player-001","score":120}'
+curl http://localhost:3000/api/scores/leaderboard
 curl http://localhost:3000/api/monitors/monitor-1/current
 curl -X POST http://localhost:3000/api/monitors/monitor-1/start
 curl http://localhost:3000/api/monitors/monitor-1/current
@@ -630,4 +729,4 @@ curl -X POST http://localhost:3000/api/monitors/monitor-1/complete
 
 ---
 
-**마지막 업데이트**: 2026-03-31 (구현 정본: `server.js`, `src/managers/MonitorManager.js`, `QueueManager.js`)
+**마지막 업데이트**: 2026-04-25 (구현 정본: `server.js`, `src/managers/MonitorManager.js`, `src/managers/QueueManager.js`, `src/utils/monitorId.js`)

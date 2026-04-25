@@ -57,7 +57,8 @@ class ScoreService {
 
     return Object.entries(totals)
       .map(([userId, totalScore]) => ({ userId, totalScore }))
-      .sort((a, b) => b.totalScore - a.totalScore);
+      .sort((a, b) => b.totalScore - a.totalScore)
+      .map((entry, index) => ({ id: index + 1, ...entry }));
   }
 }
 
