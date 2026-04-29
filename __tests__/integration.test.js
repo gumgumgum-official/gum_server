@@ -14,6 +14,10 @@ describe('REST API 통합', () => {
     ({ app, monitorManager, queueManager } = createApp());
   });
 
+  afterEach(() => {
+    queueManager.clear();
+  });
+
   function startStage3(monitorId) {
     return request(app).post(`/api/monitors/${monitorId}/start`).send({});
   }
@@ -361,6 +365,7 @@ describe('REST API 통합', () => {
       const mockVoteService = {
         createVoteAndGetResults: jest.fn().mockResolvedValue({
           ok: true,
+          cancelled: false,
           selectedCandidate: 2,
           totalVotes: 10,
           results: {
@@ -370,7 +375,10 @@ describe('REST API 통합', () => {
           },
           updatedAt: '2026-03-31T09:10:11.123Z'
         }),
-        getResults: jest.fn()
+        getResults: jest.fn(),
+        getMyVote: jest.fn(),
+        cancelVote: jest.fn(),
+        changeVote: jest.fn()
       };
 
       const { app: voteApp } = createApp({ voteService: mockVoteService });
@@ -385,20 +393,43 @@ describe('REST API 통합', () => {
         clientId: 'c-1'
       });
       expect(res.body.ok).toBe(true);
+      expect(res.body.clientId).toBe('c-1');
+      expect(res.body.selectedCandidate).toBe(2);
       expect(res.body.totalVotes).toBe(10);
       expect(res.body.results.candidate2).toBe(4);
+    });
+
+    test('POST /api/votes - clientId 없으면 400', async () => {
+      const mockVoteService = {
+        createVoteAndGetResults: jest.fn(),
+        getResults: jest.fn(),
+        getMyVote: jest.fn(),
+        cancelVote: jest.fn(),
+        changeVote: jest.fn()
+      };
+      const { app: voteApp } = createApp({ voteService: mockVoteService });
+
+      const res = await request(voteApp)
+        .post('/api/votes')
+        .send({ candidate: 2 })
+        .expect(400);
+
+      expect(res.body.error).toBe('clientId is required');
     });
 
     test('POST /api/votes - 후보 범위 오류면 400', async () => {
       const mockVoteService = {
         createVoteAndGetResults: jest.fn(),
-        getResults: jest.fn()
+        getResults: jest.fn(),
+        getMyVote: jest.fn(),
+        cancelVote: jest.fn(),
+        changeVote: jest.fn()
       };
       const { app: voteApp } = createApp({ voteService: mockVoteService });
 
       await request(voteApp)
         .post('/api/votes')
-        .send({ candidate: 4 })
+        .send({ candidate: 4, clientId: 'c-1' })
         .expect(400);
     });
 
@@ -407,16 +438,167 @@ describe('REST API 통합', () => {
       duplicateError.code = '23505';
       const mockVoteService = {
         createVoteAndGetResults: jest.fn().mockRejectedValue(duplicateError),
-        getResults: jest.fn()
+        getResults: jest.fn(),
+        getMyVote: jest.fn(),
+        cancelVote: jest.fn(),
+        changeVote: jest.fn()
       };
       const { app: voteApp } = createApp({ voteService: mockVoteService });
 
       const res = await request(voteApp)
         .post('/api/votes')
-        .send({ candidate: 1 })
+        .send({ candidate: 1, clientId: 'c-1' })
         .expect(409);
 
       expect(res.body.error).toBe('duplicate vote');
+    });
+
+    test('DELETE /api/votes/my - 투표 취소 성공 시 deleted:true', async () => {
+      const mockVoteService = {
+        createVoteAndGetResults: jest.fn(),
+        getResults: jest.fn(),
+        getMyVote: jest.fn(),
+        cancelVote: jest.fn().mockResolvedValue({
+          deleted: true,
+          totalVotes: 9,
+          results: { candidate1: 3, candidate2: 3, candidate3: 3 },
+          updatedAt: '2026-03-31T09:10:11.123Z'
+        }),
+        changeVote: jest.fn()
+      };
+      const { app: voteApp } = createApp({ voteService: mockVoteService });
+
+      const res = await request(voteApp)
+        .delete('/api/votes/my')
+        .send({ clientId: 'c-1' })
+        .expect(200);
+
+      expect(mockVoteService.cancelVote).toHaveBeenCalledWith('c-1');
+      expect(res.body.ok).toBe(true);
+      expect(res.body.deleted).toBe(true);
+    });
+
+    test('DELETE /api/votes/my - clientId 없으면 400', async () => {
+      const mockVoteService = {
+        createVoteAndGetResults: jest.fn(),
+        getResults: jest.fn(),
+        getMyVote: jest.fn(),
+        cancelVote: jest.fn(),
+        changeVote: jest.fn()
+      };
+      const { app: voteApp } = createApp({ voteService: mockVoteService });
+
+      await request(voteApp).delete('/api/votes/my').send({}).expect(400);
+    });
+
+    test('PUT /api/votes/my - 후보 변경 성공', async () => {
+      const mockVoteService = {
+        createVoteAndGetResults: jest.fn(),
+        getResults: jest.fn(),
+        getMyVote: jest.fn(),
+        cancelVote: jest.fn(),
+        changeVote: jest.fn().mockResolvedValue({
+          selectedCandidate: 3,
+          totalVotes: 10,
+          results: { candidate1: 3, candidate2: 3, candidate3: 4 },
+          updatedAt: '2026-03-31T09:10:11.123Z'
+        })
+      };
+      const { app: voteApp } = createApp({ voteService: mockVoteService });
+
+      const res = await request(voteApp)
+        .put('/api/votes/my')
+        .send({ clientId: 'c-1', candidate: 3 })
+        .expect(200);
+
+      expect(mockVoteService.changeVote).toHaveBeenCalledWith('c-1', 3);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.selectedCandidate).toBe(3);
+    });
+
+    test('PUT /api/votes/my - 기존 투표 없으면 404', async () => {
+      const noVoteError = new Error('no vote to change');
+      noVoteError.code = 'NO_VOTE';
+      const mockVoteService = {
+        createVoteAndGetResults: jest.fn(),
+        getResults: jest.fn(),
+        getMyVote: jest.fn(),
+        cancelVote: jest.fn(),
+        changeVote: jest.fn().mockRejectedValue(noVoteError)
+      };
+      const { app: voteApp } = createApp({ voteService: mockVoteService });
+
+      const res = await request(voteApp)
+        .put('/api/votes/my')
+        .send({ clientId: 'c-1', candidate: 2 })
+        .expect(404);
+
+      expect(res.body.error).toBe('no vote to change');
+    });
+
+    test('PUT /api/votes/my - 후보 범위 오류면 400', async () => {
+      const mockVoteService = {
+        createVoteAndGetResults: jest.fn(),
+        getResults: jest.fn(),
+        getMyVote: jest.fn(),
+        cancelVote: jest.fn(),
+        changeVote: jest.fn()
+      };
+      const { app: voteApp } = createApp({ voteService: mockVoteService });
+
+      await request(voteApp)
+        .put('/api/votes/my')
+        .send({ clientId: 'c-1', candidate: 5 })
+        .expect(400);
+    });
+
+    test('GET /api/votes/my - clientId로 내 투표 후보 반환', async () => {
+      const mockVoteService = {
+        createVoteAndGetResults: jest.fn(),
+        getResults: jest.fn(),
+        getMyVote: jest.fn().mockResolvedValue({ id: 'uuid-1', candidate_no: 2 }),
+        cancelVote: jest.fn(),
+        changeVote: jest.fn()
+      };
+      const { app: voteApp } = createApp({ voteService: mockVoteService });
+
+      const res = await request(voteApp)
+        .get('/api/votes/my')
+        .query({ clientId: 'c-1' })
+        .expect(200);
+
+      expect(res.body.candidate).toBe(2);
+    });
+
+    test('GET /api/votes/my - 투표 없으면 candidate:null', async () => {
+      const mockVoteService = {
+        createVoteAndGetResults: jest.fn(),
+        getResults: jest.fn(),
+        getMyVote: jest.fn().mockResolvedValue(null),
+        cancelVote: jest.fn(),
+        changeVote: jest.fn()
+      };
+      const { app: voteApp } = createApp({ voteService: mockVoteService });
+
+      const res = await request(voteApp)
+        .get('/api/votes/my')
+        .query({ clientId: 'c-new' })
+        .expect(200);
+
+      expect(res.body.candidate).toBeNull();
+    });
+
+    test('GET /api/votes/my - clientId 없으면 400', async () => {
+      const mockVoteService = {
+        createVoteAndGetResults: jest.fn(),
+        getResults: jest.fn(),
+        getMyVote: jest.fn(),
+        cancelVote: jest.fn(),
+        changeVote: jest.fn()
+      };
+      const { app: voteApp } = createApp({ voteService: mockVoteService });
+
+      await request(voteApp).get('/api/votes/my').expect(400);
     });
 
     test('GET /api/votes/results - 누적 집계 조회', async () => {
@@ -430,7 +612,10 @@ describe('REST API 통합', () => {
             candidate3: 6
           },
           updatedAt: '2026-03-31T09:10:11.123Z'
-        })
+        }),
+        getMyVote: jest.fn(),
+        cancelVote: jest.fn(),
+        changeVote: jest.fn()
       };
       const { app: voteApp } = createApp({ voteService: mockVoteService });
 

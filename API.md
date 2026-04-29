@@ -453,9 +453,9 @@ GET /api/queue/position?clientId=<clientId>
 
 ---
 
-### 8. 투표 등록 + 최신 집계 반환 (Supabase)
+### 8. 투표 등록 (Supabase)
 
-사용자가 `1|2|3` 후보 중 하나를 선택해 전송하면, 서버는 Supabase에 투표를 저장하고 **반영된 최신 누적 결과**를 함께 반환합니다.
+투표 1건을 등록합니다. 취소는 `DELETE /api/votes/my`, 후보 변경은 `PUT /api/votes/my`를 사용하세요.
 
 **요청**
 
@@ -469,8 +469,8 @@ Content-Type: application/json
 | 필드 | 필수 | 타입 | 설명 |
 |------|------|------|------|
 | `candidate` | 예 | number | 선택 후보 번호 (`1`, `2`, `3`) |
-| `sessionId` | 아니오 | string | 세션 식별자 (중복 제한 정책 시 사용) |
-| `clientId` | 아니오 | string | 클라이언트/디바이스 식별자 |
+| `clientId` | 예 | string | 디바이스 식별자 (localStorage 등에 영구 저장한 UUID 권장). `DELETE`·`PUT`·`GET /my`에 재사용 |
+| `sessionId` | 아니오 | string | 세션 식별자 |
 
 **응답 `200`**
 
@@ -478,6 +478,7 @@ Content-Type: application/json
 {
   "ok": true,
   "selectedCandidate": 2,
+  "clientId": "tablet-uuid-001",
   "totalVotes": 128,
   "results": {
     "candidate1": 40,
@@ -493,17 +494,131 @@ Content-Type: application/json
 | 필드 | 타입 | 설명 |
 |------|------|------|
 | `ok` | boolean | 성공 여부 (`true`) |
-| `selectedCandidate` | number | 방금 반영된 사용자 선택값 |
+| `selectedCandidate` | number | 방금 등록된 후보 번호 |
+| `clientId` | string | 요청에 보낸 `clientId` 그대로 반환 |
 | `totalVotes` | number | 전체 누적 투표수 |
-| `results.candidate1` | number | 1번 후보 누적 투표수 |
-| `results.candidate2` | number | 2번 후보 누적 투표수 |
-| `results.candidate3` | number | 3번 후보 누적 투표수 |
+| `results.candidate1~3` | number | 후보별 누적 투표수 |
 | `updatedAt` | string | 집계 기준 시각 (ISO-8601) |
 
 **에러**
 
+- `400` — `clientId` 누락: `{ "error": "clientId is required" }`
 - `400` — 후보값 누락/범위 오류: `{ "error": "candidate must be one of 1, 2, 3" }`
-- `409` — (중복 제한 정책 사용 시) 중복 투표: `{ "error": "duplicate vote" }`
+- `409` — DB 유니크 제약 위반 시: `{ "error": "duplicate vote" }`
+- `500` — `{ "error": "Internal Server Error" }`
+
+---
+
+### 8-1. 내 투표 취소 (DELETE)
+
+투표를 명시적으로 취소합니다. 투표가 없어도 에러 없이 `deleted: false`로 응답합니다.
+
+**요청**
+
+```http
+DELETE /api/votes/my
+Content-Type: application/json
+```
+
+**Body**
+
+| 필드 | 필수 | 타입 | 설명 |
+|------|------|------|------|
+| `clientId` | 예 | string | 디바이스 식별자 |
+
+**응답 `200`**
+
+```json
+{
+  "ok": true,
+  "deleted": true,
+  "totalVotes": 127,
+  "results": {
+    "candidate1": 40,
+    "candidate2": 54,
+    "candidate3": 33
+  },
+  "updatedAt": "2026-03-31T09:10:12.000Z"
+}
+```
+
+`deleted: false`이면 기존 투표가 없었음을 의미합니다.
+
+**에러**
+
+- `400` — `{ "error": "clientId is required" }`
+- `500` — `{ "error": "Internal Server Error" }`
+
+---
+
+### 8-2. 내 투표 후보 변경 (PUT)
+
+이미 투표한 후보를 다른 후보로 변경합니다. 기존 투표가 없으면 404.
+
+**요청**
+
+```http
+PUT /api/votes/my
+Content-Type: application/json
+```
+
+**Body**
+
+| 필드 | 필수 | 타입 | 설명 |
+|------|------|------|------|
+| `clientId` | 예 | string | 디바이스 식별자 |
+| `candidate` | 예 | number | 변경할 후보 번호 (`1`, `2`, `3`) |
+
+**응답 `200`**
+
+```json
+{
+  "ok": true,
+  "selectedCandidate": 3,
+  "totalVotes": 128,
+  "results": {
+    "candidate1": 40,
+    "candidate2": 54,
+    "candidate3": 34
+  },
+  "updatedAt": "2026-03-31T09:10:13.000Z"
+}
+```
+
+**에러**
+
+- `400` — `{ "error": "clientId is required" }`
+- `400` — `{ "error": "candidate must be one of 1, 2, 3" }`
+- `404` — 기존 투표 없음: `{ "error": "no vote to change" }`
+- `500` — `{ "error": "Internal Server Error" }`
+
+---
+
+### 8-3. 내 투표 상태 조회
+
+페이지 재진입 시 이미 투표한 후보가 있는지 확인합니다. (`POST /api/votes` upsert 없이 상태만 조회할 때 사용)
+
+**요청**
+
+```http
+GET /api/votes/my?clientId=<clientId>
+```
+
+**응답 `200` — 투표 있음**
+
+```json
+{ "candidate": 2 }
+```
+
+**응답 `200` — 투표 없음**
+
+```json
+{ "candidate": null }
+```
+
+**에러**
+
+- `400` — `{ "error": "clientId is required" }`
 - `500` — `{ "error": "Internal Server Error" }`
 
 ---
@@ -681,22 +796,39 @@ const poll = async () => {
 await fetch(`${base}/api/monitors/${monitorId}/complete`, { method: 'POST' });
 ```
 
-### 투표: 등록 후 최신 집계 반영
+### 투표: 초기 상태 복원 → 등록·취소·변경
 
 ```javascript
 const base = 'http://localhost:3000';
+const clientId = 'tablet-uuid-001'; // localStorage 등에 영구 저장
 
+// 페이지 진입 시 — 이미 투표한 후보가 있으면 UI에 선택 표시
+const myRes = await fetch(`${base}/api/votes/my?clientId=${clientId}`);
+const { candidate: currentCandidate } = await myRes.json();
+// currentCandidate: 2 → 2번 선택 상태로 초기화 / null → 미투표
+
+// 후보 클릭 시 — 신규 등록
 const voted = await fetch(`${base}/api/votes`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    candidate: 2,
-    sessionId: 'session-2026-001',
-    clientId: 'tablet-uuid-001'
-  })
+  body: JSON.stringify({ candidate: 2, clientId })
 });
-const voteResult = await voted.json();
-// voteResult.totalVotes, voteResult.results.candidate1/2/3 로 즉시 UI 반영
+const result = await voted.json();
+// result.selectedCandidate: 2, result.clientId, result.totalVotes, result.results
+
+// 같은 후보 재클릭 → 취소
+await fetch(`${base}/api/votes/my`, {
+  method: 'DELETE',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ clientId })
+});
+
+// 다른 후보 클릭 → 변경
+await fetch(`${base}/api/votes/my`, {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ clientId, candidate: 3 })
+});
 ```
 
 ---
@@ -711,9 +843,16 @@ curl http://localhost:3000/status
 curl -X POST http://localhost:3000/api/request-monitor \
   -H "Content-Type: application/json" \
   -d '{"worryId":"test-1","clientId":"curl-client"}'
+curl http://localhost:3000/api/votes/my?clientId=curl-client
 curl -X POST http://localhost:3000/api/votes \
   -H "Content-Type: application/json" \
-  -d '{"candidate":2,"sessionId":"sess-001","clientId":"curl-client"}'
+  -d '{"candidate":2,"clientId":"curl-client"}'
+curl -X DELETE http://localhost:3000/api/votes/my \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":"curl-client"}'
+curl -X PUT http://localhost:3000/api/votes/my \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":"curl-client","candidate":3}'
 curl http://localhost:3000/api/votes/results
 curl -X POST http://localhost:3000/api/scores \
   -H "Content-Type: application/json" \
@@ -729,4 +868,4 @@ curl -X POST http://localhost:3000/api/monitors/monitor-1/complete
 
 ---
 
-**마지막 업데이트**: 2026-04-25 (구현 정본: `server.js`, `src/managers/MonitorManager.js`, `src/managers/QueueManager.js`, `src/utils/monitorId.js`)
+**마지막 업데이트**: 2026-04-30 (구현 정본: `server.js`, `src/services/VoteService.js`, `src/managers/MonitorManager.js`, `src/managers/QueueManager.js`, `src/utils/monitorId.js`)

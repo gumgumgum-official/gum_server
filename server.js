@@ -325,7 +325,12 @@ function createApp(options = {}) {
   });
 
   app.post('/api/votes', async (req, res) => {
-    const { candidate, sessionId = null, clientId = null } = req.body || {};
+    const { candidate, sessionId = null, clientId } = req.body || {};
+
+    if (!clientId || typeof clientId !== 'string' || !clientId.trim()) {
+      return res.status(400).json({ error: 'clientId is required' });
+    }
+
     const candidateNo = Number(candidate);
     const isValidCandidate = Number.isInteger(candidateNo) && [1, 2, 3].includes(candidateNo);
 
@@ -335,18 +340,69 @@ function createApp(options = {}) {
       });
     }
 
+    const trimmedClientId = clientId.trim();
+
     try {
       const result = await voteService.createVoteAndGetResults({
         candidate: candidateNo,
         sessionId,
-        clientId
+        clientId: trimmedClientId
       });
-      return res.status(200).json(result);
+      return res.status(200).json({ ...result, clientId: trimmedClientId });
     } catch (error) {
       if (error?.code === '23505') {
         return res.status(409).json({ error: 'duplicate vote' });
       }
       logger.error('투표 저장/집계 실패:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  app.delete('/api/votes/my', async (req, res) => {
+    const { clientId } = req.body || {};
+    if (!clientId || typeof clientId !== 'string' || !clientId.trim()) {
+      return res.status(400).json({ error: 'clientId is required' });
+    }
+    try {
+      const result = await voteService.cancelVote(clientId.trim());
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      logger.error('투표 취소 실패:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  app.put('/api/votes/my', async (req, res) => {
+    const { clientId, candidate } = req.body || {};
+    if (!clientId || typeof clientId !== 'string' || !clientId.trim()) {
+      return res.status(400).json({ error: 'clientId is required' });
+    }
+    const candidateNo = Number(candidate);
+    if (!Number.isInteger(candidateNo) || ![1, 2, 3].includes(candidateNo)) {
+      return res.status(400).json({ error: 'candidate must be one of 1, 2, 3' });
+    }
+    try {
+      const result = await voteService.changeVote(clientId.trim(), candidateNo);
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      if (error?.code === 'NO_VOTE') {
+        return res.status(404).json({ error: 'no vote to change' });
+      }
+      logger.error('투표 변경 실패:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  app.get('/api/votes/my', async (req, res) => {
+    const { clientId } = req.query;
+    if (!clientId || typeof clientId !== 'string') {
+      return res.status(400).json({ error: 'clientId is required' });
+    }
+    try {
+      const vote = await voteService.getMyVote(clientId.trim());
+      return res.json({ candidate: vote ? vote.candidate_no : null });
+    } catch (error) {
+      logger.error('내 투표 조회 실패:', error);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   });
