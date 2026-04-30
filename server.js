@@ -8,6 +8,7 @@ const MonitorBindingManager = require('./src/managers/MonitorBindingManager');
 const QueueManager = require('./src/managers/QueueManager');
 const VoteService = require('./src/services/VoteService');
 const ScoreService = require('./src/services/ScoreService');
+const PostService = require('./src/services/PostService');
 const supabase = require('./src/config/supabase');
 const logger = require('./src/utils/logger');
 const constants = require('./src/utils/constants');
@@ -22,6 +23,7 @@ function createApp(options = {}) {
   const queueManager = new QueueManager();
   const voteService = options.voteService || new VoteService(supabase);
   const scoreService = options.scoreService || new ScoreService(supabase);
+  const postService = options.postService || new PostService(supabase);
 
   const app = express();
 
@@ -447,7 +449,35 @@ function createApp(options = {}) {
     }
   });
 
-  return { app, monitorManager, monitorBindingManager, queueManager, voteService, scoreService };
+  app.post('/api/posts', async (req, res) => {
+    const { nickname, content } = req.body || {};
+
+    if (!content || typeof content !== 'string' || !content.trim()) {
+      return res.status(400).json({ error: 'content is required' });
+    }
+
+    const trimmedNickname = (nickname && typeof nickname === 'string') ? nickname.trim() || null : null;
+
+    try {
+      const post = await postService.createPost({ nickname: trimmedNickname, content: content.trim() });
+      return res.status(201).json({ ok: true, post });
+    } catch (error) {
+      logger.error('게시글 등록 실패:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  app.get('/api/posts', async (req, res) => {
+    try {
+      const posts = await postService.getPosts();
+      return res.status(200).json({ posts });
+    } catch (error) {
+      logger.error('게시글 조회 실패:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  return { app, monitorManager, monitorBindingManager, queueManager, voteService, scoreService, postService };
 }
 
 module.exports = { createApp };

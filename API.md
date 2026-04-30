@@ -53,6 +53,21 @@ create index if not exists idx_votes_created_at on public.votes (created_at);
 
 중복 투표를 제한하려면 정책에 맞게 `session_id` 또는 `client_id`에 유니크 인덱스를 추가합니다.
 
+### Supabase `posts` 테이블 (게시판 API)
+
+게시판 API(`POST /api/posts`, `GET /api/posts`)는 아래 `posts` 테이블을 기준으로 동작합니다.
+
+```sql
+create table if not exists public.posts (
+  id bigint generated always as identity primary key,
+  nickname text null,
+  content text not null,
+  created_at timestamptz not null default now()
+);
+```
+
+---
+
 ### Supabase `game_scores` 테이블 (점수 API)
 
 점수 API(`POST /api/scores`, `GET /api/scores/leaderboard`)는 아래 `game_scores` 테이블을 기준으로 동작합니다.
@@ -451,175 +466,8 @@ GET /api/queue/position?clientId=<clientId>
 
 - `400` — `{ "error": "clientId is required" }`
 
----
+-
 
-### 8. 투표 등록 (Supabase)
-
-투표 1건을 등록합니다. 취소는 `DELETE /api/votes/my`, 후보 변경은 `PUT /api/votes/my`를 사용하세요.
-
-**요청**
-
-```http
-POST /api/votes
-Content-Type: application/json
-```
-
-**Body**
-
-| 필드 | 필수 | 타입 | 설명 |
-|------|------|------|------|
-| `candidate` | 예 | number | 선택 후보 번호 (`1`, `2`, `3`) |
-| `clientId` | 예 | string | 디바이스 식별자 (localStorage 등에 영구 저장한 UUID 권장). `DELETE`·`PUT`·`GET /my`에 재사용 |
-| `sessionId` | 아니오 | string | 세션 식별자 |
-
-**응답 `200`**
-
-```json
-{
-  "ok": true,
-  "selectedCandidate": 2,
-  "clientId": "tablet-uuid-001",
-  "totalVotes": 128,
-  "results": {
-    "candidate1": 40,
-    "candidate2": 55,
-    "candidate3": 33
-  },
-  "updatedAt": "2026-03-31T09:10:11.123Z"
-}
-```
-
-**필드 설명**
-
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `ok` | boolean | 성공 여부 (`true`) |
-| `selectedCandidate` | number | 방금 등록된 후보 번호 |
-| `clientId` | string | 요청에 보낸 `clientId` 그대로 반환 |
-| `totalVotes` | number | 전체 누적 투표수 |
-| `results.candidate1~3` | number | 후보별 누적 투표수 |
-| `updatedAt` | string | 집계 기준 시각 (ISO-8601) |
-
-**에러**
-
-- `400` — `clientId` 누락: `{ "error": "clientId is required" }`
-- `400` — 후보값 누락/범위 오류: `{ "error": "candidate must be one of 1, 2, 3" }`
-- `409` — DB 유니크 제약 위반 시: `{ "error": "duplicate vote" }`
-- `500` — `{ "error": "Internal Server Error" }`
-
----
-
-### 8-1. 내 투표 취소 (DELETE)
-
-투표를 명시적으로 취소합니다. 투표가 없어도 에러 없이 `deleted: false`로 응답합니다.
-
-**요청**
-
-```http
-DELETE /api/votes/my
-Content-Type: application/json
-```
-
-**Body**
-
-| 필드 | 필수 | 타입 | 설명 |
-|------|------|------|------|
-| `clientId` | 예 | string | 디바이스 식별자 |
-
-**응답 `200`**
-
-```json
-{
-  "ok": true,
-  "deleted": true,
-  "totalVotes": 127,
-  "results": {
-    "candidate1": 40,
-    "candidate2": 54,
-    "candidate3": 33
-  },
-  "updatedAt": "2026-03-31T09:10:12.000Z"
-}
-```
-
-`deleted: false`이면 기존 투표가 없었음을 의미합니다.
-
-**에러**
-
-- `400` — `{ "error": "clientId is required" }`
-- `500` — `{ "error": "Internal Server Error" }`
-
----
-
-### 8-2. 내 투표 후보 변경 (PUT)
-
-이미 투표한 후보를 다른 후보로 변경합니다. 기존 투표가 없으면 404.
-
-**요청**
-
-```http
-PUT /api/votes/my
-Content-Type: application/json
-```
-
-**Body**
-
-| 필드 | 필수 | 타입 | 설명 |
-|------|------|------|------|
-| `clientId` | 예 | string | 디바이스 식별자 |
-| `candidate` | 예 | number | 변경할 후보 번호 (`1`, `2`, `3`) |
-
-**응답 `200`**
-
-```json
-{
-  "ok": true,
-  "selectedCandidate": 3,
-  "totalVotes": 128,
-  "results": {
-    "candidate1": 40,
-    "candidate2": 54,
-    "candidate3": 34
-  },
-  "updatedAt": "2026-03-31T09:10:13.000Z"
-}
-```
-
-**에러**
-
-- `400` — `{ "error": "clientId is required" }`
-- `400` — `{ "error": "candidate must be one of 1, 2, 3" }`
-- `404` — 기존 투표 없음: `{ "error": "no vote to change" }`
-- `500` — `{ "error": "Internal Server Error" }`
-
----
-
-### 8-3. 내 투표 상태 조회
-
-페이지 재진입 시 이미 투표한 후보가 있는지 확인합니다. (`POST /api/votes` upsert 없이 상태만 조회할 때 사용)
-
-**요청**
-
-```http
-GET /api/votes/my?clientId=<clientId>
-```
-
-**응답 `200` — 투표 있음**
-
-```json
-{ "candidate": 2 }
-```
-
-**응답 `200` — 투표 없음**
-
-```json
-{ "candidate": null }
-```
-
-**에러**
-
-- `400` — `{ "error": "clientId is required" }`
-- `500` — `{ "error": "Internal Server Error" }`
 
 ---
 
@@ -728,6 +576,82 @@ GET /api/scores/leaderboard
 
 ---
 
+
+### 12. 게시글 등록 (Supabase)
+
+게시글 1건을 저장합니다. `id`는 서버가 자동으로 1, 2, 3... 순서로 부여합니다.
+
+**요청**
+
+```http
+POST /api/posts
+Content-Type: application/json
+```
+
+**Body**
+
+| 필드 | 필수 | 타입 | 설명 |
+|------|------|------|------|
+| `content` | 예 | string | 게시글 내용 (공백만인 경우 400) |
+| `nickname` | 아니오 | string\|null | 작성자 닉네임. 없으면 `null`로 저장 |
+
+**응답 `201`**
+
+```json
+{
+  "ok": true,
+  "post": {
+    "id": 1,
+    "nickname": "홍길동",
+    "content": "재밌었어요!",
+    "created_at": "2026-04-30T10:00:00.000Z"
+  }
+}
+```
+
+**에러**
+
+- `400` — `content` 누락/공백: `{ "error": "content is required" }`
+- `500` — `{ "error": "Internal Server Error" }`
+
+---
+
+### 13. 게시글 목록 조회 (Supabase)
+
+전체 게시글을 등록 순서(`id` 오름차순)로 조회합니다.
+
+**요청**
+
+```http
+GET /api/posts
+```
+
+**응답 `200`**
+
+```json
+{
+  "posts": [
+    {
+      "id": 1,
+      "nickname": "홍길동",
+      "content": "재밌었어요!",
+      "created_at": "2026-04-30T10:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "nickname": null,
+      "content": "익명 게시글입니다.",
+      "created_at": "2026-04-30T10:05:00.000Z"
+    }
+  ]
+}
+```
+
+**에러**
+
+- `500` — `{ "error": "Internal Server Error" }`
+
+---
 
 ## 에러 응답
 
@@ -868,4 +792,4 @@ curl -X POST http://localhost:3000/api/monitors/monitor-1/complete
 
 ---
 
-**마지막 업데이트**: 2026-04-30 (구현 정본: `server.js`, `src/services/VoteService.js`, `src/managers/MonitorManager.js`, `src/managers/QueueManager.js`, `src/utils/monitorId.js`)
+**마지막 업데이트**: 2026-04-30 (구현 정본: `server.js`, `src/services/VoteService.js`, `src/services/PostService.js`, `src/managers/MonitorManager.js`, `src/managers/QueueManager.js`, `src/utils/monitorId.js`)
