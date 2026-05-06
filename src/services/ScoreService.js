@@ -11,34 +11,29 @@ class ScoreService {
     }
   }
 
-  async resolveUniqueUserId(userId) {
-    const { data, error } = await this.supabase
-      .from('game_scores')
-      .select('user_id')
-      .like('user_id', `${userId}%`);
-
-    if (error) throw error;
-
-    const existingIds = new Set((data || []).map(r => r.user_id));
-    if (!existingIds.has(userId)) return userId;
-
-    let n = 2;
-    while (existingIds.has(`${userId}${n}`)) n++;
-    return `${userId}${n}`;
-  }
-
   async addScore({ userId, score }) {
     this.ensureClient();
 
-    const resolvedUserId = await this.resolveUniqueUserId(userId);
+    const { data: existing, error: existingError } = await this.supabase
+      .from('game_scores')
+      .select('user_id')
+      .eq('user_id', userId)
+      .limit(1);
+
+    if (existingError) throw existingError;
+    if (existing && existing.length > 0) {
+      const err = new Error('userId already exists');
+      err.code = 'DUPLICATE_USER_ID';
+      throw err;
+    }
 
     const { error } = await this.supabase
       .from('game_scores')
-      .insert({ user_id: resolvedUserId, score });
+      .insert({ user_id: userId, score });
 
     if (error) throw error;
 
-    return resolvedUserId;
+    return userId;
   }
 
   async getLeaderboard() {

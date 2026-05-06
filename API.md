@@ -503,7 +503,7 @@ GET /api/votes/results
 
 ### 10. 점수 등록 (Supabase)
 
-점수 1건을 저장합니다. 입력한 `userId`가 이미 존재하면 서버가 자동으로 접미사(`2`, `3`, ...)를 붙여 **고유한 `userId`로 저장**합니다.
+점수 1건을 저장합니다. 입력한 `userId`가 이미 존재하면 **등록할 수 없으며**, 클라이언트는 **다른 `userId`를 입력**해야 합니다.
 
 **요청**
 
@@ -516,7 +516,7 @@ Content-Type: application/json
 
 | 필드 | 필수 | 타입 | 설명 |
 |------|------|------|------|
-| `userId` | 예 | string | 유저 식별자 (빈 문자열 불가, trim 후 사용). 기존과 중복되면 서버가 `userId2`, `userId3`처럼 변경 저장 |
+| `userId` | 예 | string | 유저 식별자 (빈 문자열 불가, trim 후 사용). **이미 존재하면 409 에러** |
 | `score` | 예 | number | 0 이상의 정수 |
 
 **응답 `201`**
@@ -529,12 +529,13 @@ Content-Type: application/json
 }
 ```
 
-`userId`는 **저장에 실제 사용된 값**입니다(중복 해소로 입력값과 달라질 수 있음).
+`userId`는 **저장에 실제 사용된 값**입니다.
 
 **에러**
 
 - `400` — `userId` 누락/공백: `{ "error": "userId is required" }`
 - `400` — `score` 형식 오류(정수 아님 또는 음수): `{ "error": "score must be a non-negative integer" }`
+- `409` — `userId` 중복: `{ "error": "userId already exists" }`
 - `500` — `{ "error": "Internal Server Error" }`
 
 ---

@@ -431,9 +431,12 @@ function createApp(options = {}) {
     }
 
     try {
-      const resolvedUserId = await scoreService.addScore({ userId: userId.trim(), score: parsedScore });
-      return res.status(201).json({ ok: true, userId: resolvedUserId, score: parsedScore });
+      const savedUserId = await scoreService.addScore({ userId: userId.trim(), score: parsedScore });
+      return res.status(201).json({ ok: true, userId: savedUserId, score: parsedScore });
     } catch (error) {
+      if (error?.code === 'DUPLICATE_USER_ID') {
+        return res.status(409).json({ error: 'userId already exists' });
+      }
       logger.error('점수 등록 실패:', error);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
