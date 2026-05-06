@@ -35,13 +35,7 @@ Supabase 데이터베이스 설정이 필요합니다.
 
 ### 3. 환경변수 설정
 
-`.env.template` 파일을 복사하여 `.env` 파일을 생성:
-
-```bash
-cp .env.template .env
-```
-
-`.env` 파일을 열어 Supabase 정보를 입력:
+`.env` 파일을 생성하고 Supabase 정보를 입력:
 
 ```bash
 # .env
@@ -51,6 +45,10 @@ NODE_ENV=development
 # Supabase (https://supabase.com에서 확인)
 SUPABASE_URL=https://xxxxx.supabase.co
 SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+# (권장) 서버 전용 키 — RLS(Row Level Security) 정책에 막히지 않게 서버에서만 사용
+# 주의: 절대 프론트엔드에 노출 금지
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
 ### 4. 서버 실행

@@ -79,6 +79,7 @@ PORT=3000
 NODE_ENV=development|production
 SUPABASE_URL=https://xxxxx.supabase.co
 SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...  # optional (recommended for server writes; bypasses RLS)
 MAX_MONITOR_REGISTRY_SIZE=64   # optional, default 64
 ```
 
