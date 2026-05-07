@@ -295,7 +295,12 @@ function createApp(options = {}) {
       });
     }
 
+    const wasBusy = monitorManager.monitors[monitorId]?.status === constants.MONITOR_STATUS.BUSY;
     monitorManager.release(monitorId);
+
+    if (!wasBusy) {
+      return res.json({ ok: true, assignedNext: false });
+    }
 
     const nextUser = queueManager.dequeue();
     if (nextUser) {
