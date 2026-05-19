@@ -34,6 +34,19 @@ function createApp(options = {}) {
 
   app.use(express.json());
 
+  // 전체 요청 로깅
+  app.use((req, res, next) => {
+    const start = Date.now();
+    const { method, url, body } = req;
+    res.on('finish', () => {
+      const ms = Date.now() - start;
+      const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
+      const bodyStr = method !== 'GET' && body ? ` body=${JSON.stringify(body)}` : '';
+      logger[level](`${method} ${url} → ${res.statusCode} (${ms}ms)${bodyStr}`);
+    });
+    next();
+  });
+
   function createAssignedResponse(monitorId) {
     const legacy = constants.MONITOR_IDS.includes(monitorId);
     const monitorNumber = legacy
@@ -495,6 +508,14 @@ function createApp(options = {}) {
     }
   });
 
+  // 태블릿 클라이언트 원격 로그 수신 (디버그용)
+  app.post('/api/debug-log', (req, res) => {
+    const { level = 'info', message, data } = req.body || {};
+    const dataStr = data ? ` | ${JSON.stringify(data)}` : '';
+    logger[level in logger ? level : 'info'](`[CLIENT] ${message}${dataStr}`);
+    res.json({ ok: true });
+  });
+
   return { app, monitorManager, monitorBindingManager, queueManager, voteService, scoreService, postService };
 }
 
@@ -525,5 +546,13 @@ if (require.main === module) {
       logger.info('서버 종료 완료');
       process.exit(0);
     });
+  });
+
+  process.on('uncaughtException', (err) => {
+    logger.error('uncaughtException:', err.message, err.stack);
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    logger.error('unhandledRejection:', reason);
   });
 }
