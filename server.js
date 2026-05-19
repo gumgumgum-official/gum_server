@@ -152,7 +152,13 @@ function createApp(options = {}) {
     } = req.body || {};
     const displaySeq = parseDisplaySeq(rawDisplaySeq);
 
+    const monitorStates = Object.entries(monitorManager.monitors).map(([id, m]) =>
+      `${id}:${m.status}${m.reservedWorry ? '(reserved)' : ''}`
+    ).join(', ');
+    logger.info(`[request-monitor] 요청 수신 worryId=${worryId} clientId=${clientId} | 모니터상태: ${monitorStates}`);
+
     if (!worryId) {
+      logger.warn('[request-monitor] worryId 없음 → 400');
       return res.status(400).json({
         error: 'worryId is required'
       });
@@ -173,6 +179,7 @@ function createApp(options = {}) {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         if (msg === 'monitor registry full') {
+          logger.warn('[request-monitor] monitor registry full → 503');
           return res.status(503).json({ error: 'monitor registry full' });
         }
         throw e;
@@ -198,11 +205,13 @@ function createApp(options = {}) {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         if (msg === 'monitor registry full') {
+          logger.warn('[request-monitor] monitor registry full (reserve) → 503');
           return res.status(503).json({ error: 'monitor registry full' });
         }
         throw e;
       }
 
+      logger.info(`[request-monitor] 배정 완료 worryId=${worryId} → ${availableMonitor}`);
       return res.json({
         assigned: true,
         ...createAssignedResponse(availableMonitor)
@@ -223,6 +232,7 @@ function createApp(options = {}) {
       queueMeta
     );
 
+    logger.info(`[request-monitor] 대기열 추가 worryId=${worryId} queuePosition=${position} queueClientId=${queueClientId}`);
     return res.json({
       assigned: false,
       queuePosition: position,
