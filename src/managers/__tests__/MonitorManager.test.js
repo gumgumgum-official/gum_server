@@ -100,6 +100,69 @@ describe('MonitorManager', () => {
     });
   });
 
+  describe('forceAssign()', () => {
+    test('idle 모니터를 즉시 busy + currentWorry로 만든다', () => {
+      monitorManager.forceAssign('monitor-1', {
+        worryId: 'w1',
+        svgUrl: 'u1',
+        sessionId: 's1'
+      });
+      const m = monitorManager.monitors['monitor-1'];
+      expect(m.status).toBe('busy');
+      expect(m.currentWorry.worryId).toBe('w1');
+      expect(m.currentWorry.svgUrl).toBe('u1');
+      expect(m.reservedWorry).toBeNull();
+    });
+
+    test('이미 busy(다른 걱정)인 모니터를 강제로 덮어쓴다', () => {
+      monitorManager.reserve('monitor-1', { worryId: 'old' });
+      monitorManager.start('monitor-1');
+      monitorManager.forceAssign('monitor-1', { worryId: 'new', svgUrl: 'u' });
+      const m = monitorManager.monitors['monitor-1'];
+      expect(m.status).toBe('busy');
+      expect(m.currentWorry.worryId).toBe('new');
+    });
+
+    test('남아있던 reservedWorry를 비운다', () => {
+      monitorManager.reserve('monitor-1', { worryId: 'reserved' });
+      monitorManager.forceAssign('monitor-1', { worryId: 'forced' });
+      expect(monitorManager.monitors['monitor-1'].reservedWorry).toBeNull();
+    });
+
+    test('유효한 displaySeq는 currentWorry에 복사', () => {
+      monitorManager.forceAssign('monitor-1', { worryId: 'w', displaySeq: 42 });
+      expect(monitorManager.monitors['monitor-1'].currentWorry.displaySeq).toBe(42);
+    });
+  });
+
+  describe('clear()', () => {
+    test('busy + currentWorry 모니터를 idle로 비우고 true 반환', () => {
+      monitorManager.reserve('monitor-1', { worryId: 'w', clientId: 'c' });
+      monitorManager.start('monitor-1');
+      const result = monitorManager.clear('monitor-1');
+      const m = monitorManager.monitors['monitor-1'];
+      expect(result).toBe(true);
+      expect(m.status).toBe('idle');
+      expect(m.currentWorry).toBeNull();
+      expect(m.reservedWorry).toBeNull();
+      expect(m.clientId).toBeNull();
+    });
+
+    test('예약(reservedWorry)만 있어도 비우고 true 반환', () => {
+      monitorManager.reserve('monitor-1', { worryId: 'w' });
+      expect(monitorManager.clear('monitor-1')).toBe(true);
+      expect(monitorManager.monitors['monitor-1'].reservedWorry).toBeNull();
+    });
+
+    test('이미 비어있는 모니터는 false 반환', () => {
+      expect(monitorManager.clear('monitor-1')).toBe(false);
+    });
+
+    test('존재하지 않는 모니터는 false 반환', () => {
+      expect(monitorManager.clear('monitor-999')).toBe(false);
+    });
+  });
+
   describe('getStatus()', () => {
     test('busy 반영', () => {
       monitorManager.reserve('monitor-1', { worryId: 'w' });

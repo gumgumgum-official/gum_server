@@ -340,6 +340,30 @@ function createApp(options = {}) {
     });
   });
 
+  /**
+   * 강제 초기화 — monitorId만 보내면 진행 중·예약 여부와 상관없이
+   * 즉시 배정을 취소하고 해당 모니터를 idle로 되돌린다.
+   */
+  app.post('/api/monitors/:monitorId/clear', (req, res) => {
+    const { monitorId } = req.params;
+
+    if (!isValidMonitorIdParam(monitorId)) {
+      return res.status(400).json({
+        error: 'invalid monitorId'
+      });
+    }
+
+    const cleared = monitorManager.clear(monitorId);
+    logger.info(`[monitor-clear] ${monitorId} 초기화 (cleared=${cleared})`);
+
+    return res.json({
+      ok: true,
+      monitorId,
+      cleared,
+      status: constants.MONITOR_STATUS.IDLE
+    });
+  });
+
   app.get('/api/queue/position', (req, res) => {
     const { clientId } = req.query;
     if (!clientId || typeof clientId !== 'string') {
@@ -506,6 +530,79 @@ function createApp(options = {}) {
       logger.error('게시글 조회 실패:', error);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
+  });
+
+  /**
+   * 강제 배정 (운영자 URL 파라미터)
+   * GET /api/emergency-assign?worryId=223&monitorId=monitor-1
+   *
+   * worryId  : 필수 (seq 번호)
+   * monitorId: 선택 (없으면 빈 모니터 자동 배정, 없으면 monitor-1 강제)
+   *
+   * 시크릿 없이 접근 가능. 이미 busy(다른 걱정 진행 중)여도 강제로 덮어쓴다.
+   */
+  app.get('/api/emergency-assign', async (req, res) => {
+    const { worryId, monitorId: rawMonitorId } = req.query;
+
+    const seq = parseInt(worryId, 10);
+    if (!worryId || isNaN(seq) || seq < 1) {
+      return res.status(400).json({ error: 'worryId must be a positive integer (seq number)' });
+    }
+
+    if (!supabase) {
+      return res.status(503).json({ error: 'supabase not configured' });
+    }
+
+    // Supabase에서 seq로 SVG URL 조회
+    const { data, error: dbError } = await supabase
+      .from('strokes')
+      .select('id, storage_path_svg, session_id, seq')
+      .eq('seq', seq)
+      .single();
+
+    if (dbError || !data) {
+      logger.warn(`[emergency-assign] seq=${seq} 조회 실패: ${dbError?.message}`);
+      return res.status(404).json({ error: `seq=${seq} 에 해당하는 걱정을 찾을 수 없습니다`, detail: dbError?.message });
+    }
+
+    const svgUrl = data.storage_path_svg;
+    const sessionId = data.session_id ?? null;
+
+    if (!svgUrl) {
+      return res.status(404).json({ error: `seq=${seq} 의 SVG URL이 없습니다` });
+    }
+
+    const displaySeq = parseDisplaySeq(seq);
+    const targetMonitorId = normalizeMonitorIdParam(rawMonitorId);
+
+    let assignTarget = targetMonitorId || monitorManager.findAvailable();
+    if (!assignTarget) {
+      assignTarget = 'monitor-1';
+      logger.warn('[emergency-assign] 빈 모니터 없음 — monitor-1에 강제 배정');
+    }
+
+    try {
+      monitorManager.forceAssign(assignTarget, {
+        worryId: String(seq),
+        clientId: null,
+        svgUrl,
+        sessionId,
+        ...(displaySeq != null ? { displaySeq } : {}),
+      });
+    } catch (e) {
+      logger.error('[emergency-assign] forceAssign 실패:', e.message);
+      return res.status(500).json({ error: 'force assign failed' });
+    }
+
+    logger.info(`[emergency-assign] 배정 완료 seq=${seq} → ${assignTarget} svgUrl=${svgUrl}`);
+    return res.json({
+      ok: true,
+      assigned: true,
+      monitorId: assignTarget,
+      ...createAssignedResponse(assignTarget),
+      worryId: String(seq),
+      svgUrl,
+    });
   });
 
   // 태블릿 클라이언트 원격 로그 수신 (디버그용)

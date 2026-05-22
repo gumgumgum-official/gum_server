@@ -241,6 +241,42 @@ describe('REST API 통합', () => {
     });
   });
 
+  describe('POST /api/monitors/:monitorId/clear', () => {
+    test('busy 모니터를 강제로 idle로 비우고 cleared=true', async () => {
+      monitorManager.reserve('monitor-1', { worryId: 'w', clientId: 'c' });
+      monitorManager.start('monitor-1');
+
+      const res = await request(app)
+        .post('/api/monitors/monitor-1/clear')
+        .expect(200);
+
+      expect(res.body.ok).toBe(true);
+      expect(res.body.cleared).toBe(true);
+      expect(res.body.status).toBe('idle');
+      expect(monitorManager.monitors['monitor-1'].currentWorry).toBeNull();
+      expect(monitorManager.monitors['monitor-1'].reservedWorry).toBeNull();
+
+      const cur = await request(app)
+        .get('/api/monitors/monitor-1/current')
+        .expect(200);
+      expect(cur.body.status).toBe('idle');
+    });
+
+    test('이미 비어있는 모니터는 cleared=false', async () => {
+      const res = await request(app)
+        .post('/api/monitors/monitor-1/clear')
+        .expect(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.cleared).toBe(false);
+    });
+
+    test('유효하지 않은 monitorId는 400', async () => {
+      await request(app)
+        .post('/api/monitors/monitor-99/clear')
+        .expect(400);
+    });
+  });
+
   describe('GET /api/queue/position', () => {
     test('대기 중이면 순번, 아니면 0', async () => {
       monitorManager.reserve('monitor-1', { worryId: 'a' });

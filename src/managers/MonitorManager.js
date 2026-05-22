@@ -123,12 +123,54 @@ class MonitorManager {
   }
 
   /**
+   * 강제 배정 — 예약 단계를 건너뛰고 즉시 busy + currentWorry로 만든다.
+   * 운영자 URL 파라미터(emergency-assign)용. 이미 busy(다른 currentWorry)여도 덮어쓴다.
+   * @param {object} worryData - { worryId, clientId?, svgUrl?, sessionId?, displaySeq? }
+   */
+  forceAssign(monitorId, worryData) {
+    this.ensureMonitor(monitorId);
+    const m = this.monitors[monitorId];
+    m.currentWorry = {
+      worryId: worryData.worryId,
+      assignedAt: Date.now(),
+      svgUrl: worryData.svgUrl ?? null,
+      sessionId: worryData.sessionId ?? null
+    };
+    if (
+      worryData.displaySeq != null &&
+      Number.isInteger(worryData.displaySeq) &&
+      worryData.displaySeq >= 1
+    ) {
+      m.currentWorry.displaySeq = worryData.displaySeq;
+    }
+    m.reservedWorry = null;
+    m.status = 'busy';
+    m.clientId = worryData.clientId ?? null;
+  }
+
+  /**
    * Stage6 종료 등 — 체험만 종료, 예약은 건드리지 않음(complete 직후 dequeue·reserve에서 설정)
    */
   release(monitorId) {
     if (!this.monitors[monitorId]) return;
     this.monitors[monitorId].status = 'idle';
     this.monitors[monitorId].currentWorry = null;
+  }
+
+  /**
+   * 강제 초기화 — 진행 중이든 예약 상태든 즉시 모든 배정을 취소하고 idle로 되돌린다.
+   * monitorId만 보내면 38번째 배정이라도 그 자리에서 비운다.
+   * @returns {boolean} 비울 배정이 있었으면 true (없었으면 false)
+   */
+  clear(monitorId) {
+    const m = this.monitors[monitorId];
+    if (!m) return false;
+    const hadAssignment = m.status === 'busy' || !!m.currentWorry || !!m.reservedWorry;
+    m.status = 'idle';
+    m.currentWorry = null;
+    m.reservedWorry = null;
+    m.clientId = null;
+    return hadAssignment;
   }
 
   getStatus() {
