@@ -553,10 +553,10 @@ function createApp(options = {}) {
       return res.status(503).json({ error: 'supabase not configured' });
     }
 
-    // Supabase에서 seq로 SVG URL 조회
+    // Supabase에서 seq로 SVG URL 조회 (strokes 스키마: id/file_url/seq)
     const { data, error: dbError } = await supabase
       .from('strokes')
-      .select('id, storage_path_svg, session_id, seq')
+      .select('id, file_url, seq')
       .eq('seq', seq)
       .single();
 
@@ -565,8 +565,8 @@ function createApp(options = {}) {
       return res.status(404).json({ error: `seq=${seq} 에 해당하는 걱정을 찾을 수 없습니다`, detail: dbError?.message });
     }
 
-    const svgUrl = data.storage_path_svg;
-    const sessionId = data.session_id ?? null;
+    const svgUrl = data.file_url;
+    const sessionId = null; // strokes 테이블에 session_id 컬럼 없음
 
     if (!svgUrl) {
       return res.status(404).json({ error: `seq=${seq} 의 SVG URL이 없습니다` });
